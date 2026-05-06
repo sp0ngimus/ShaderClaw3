@@ -5,14 +5,15 @@
   "INPUTS": [
     { "NAME": "msg", "TYPE": "text", "DEFAULT": "HEY DID YOU SEE THIS LOOKS CRAZY RIGHT YEAH ITS WILD", "MAX_LENGTH": 48 },
     { "NAME": "fontFamily", "LABEL": "Font", "TYPE": "long", "DEFAULT": 0, "VALUES": [0,1,2,3], "LABELS": ["Inter","Times","Caslon","Outfit"] },
-    { "NAME": "bubbleCount", "LABEL": "Bubbles On Screen", "TYPE": "long", "DEFAULT": 5, "VALUES": [2,3,4,5,6,7], "LABELS": ["2","3","4","5","6","7"] },
-    { "NAME": "spawnRate", "LABEL": "Spawn Rate", "TYPE": "float", "DEFAULT": 0.45, "MIN": 0.1, "MAX": 1.5 },
+    { "NAME": "bubbleCount", "LABEL": "Bubbles On Screen", "TYPE": "long", "DEFAULT": 3, "VALUES": [1,2,3,4,5,6,7], "LABELS": ["1","2","3","4","5","6","7"] },
+    { "NAME": "wrapAt", "LABEL": "Wrap At (chars)", "TYPE": "long", "DEFAULT": 14, "VALUES": [8,10,12,14,16,18,22,28], "LABELS": ["8","10","12","14","16","18","22","28"] },
+    { "NAME": "spawnRate", "LABEL": "Spawn Rate", "TYPE": "float", "DEFAULT": 0.25, "MIN": 0.1, "MAX": 1.5 },
     { "NAME": "floatSpeed", "LABEL": "Float Speed", "TYPE": "float", "DEFAULT": 0.18, "MIN": 0.05, "MAX": 0.6 },
     { "NAME": "wobble", "LABEL": "Wobble", "TYPE": "float", "DEFAULT": 0.5, "MIN": 0.0, "MAX": 1.5 },
-    { "NAME": "textScale", "LABEL": "Text Size", "TYPE": "float", "DEFAULT": 0.038, "MIN": 0.018, "MAX": 0.07 },
+    { "NAME": "textScale", "LABEL": "Text Size", "TYPE": "float", "DEFAULT": 0.044, "MIN": 0.018, "MAX": 0.07 },
     { "NAME": "kerning", "LABEL": "Kerning", "TYPE": "float", "DEFAULT": 0.92, "MIN": 0.7, "MAX": 1.4 },
-    { "NAME": "bubblePadding", "LABEL": "Bubble Padding", "TYPE": "float", "DEFAULT": 0.022, "MIN": 0.005, "MAX": 0.05 },
-    { "NAME": "cornerRadius", "LABEL": "Corner Radius", "TYPE": "float", "DEFAULT": 0.025, "MIN": 0.0, "MAX": 0.05 },
+    { "NAME": "bubblePadding", "LABEL": "Bubble Padding", "TYPE": "float", "DEFAULT": 0.030, "MIN": 0.005, "MAX": 0.06 },
+    { "NAME": "cornerRadius", "LABEL": "Corner Radius", "TYPE": "float", "DEFAULT": 0.030, "MIN": 0.0, "MAX": 0.06 },
     { "NAME": "audioReact", "LABEL": "Audio React", "TYPE": "float", "DEFAULT": 0.6, "MIN": 0.0, "MAX": 2.0 },
     { "NAME": "autoTextColor", "LABEL": "Auto Text Color", "TYPE": "bool", "DEFAULT": 1.0 },
     { "NAME": "inputTex", "LABEL": "Layer Source", "TYPE": "image" },
@@ -222,10 +223,19 @@ void main() {
         vec2 bubbleC = vec2(bx, by);
         vec2 d = p - bubbleC;
 
-        // Bubble box size — fits chunkLen chars across with padding.
-        float boxW = float(chunkLen) * charW * 1.15 + bubblePadding * 2.0;
-        float boxH = charH + bubblePadding * 2.0;
-        vec2  halfBox = vec2(boxW, boxH) * 0.5;
+        // Multi-line wrap layout — bubble sized for `wrapAt` chars per row.
+        // Long chunks get taller bubbles (more rows), so a full sentence
+        // fits inside one bubble instead of being split across many.
+        float kernX        = charW * kerning;
+        int   charsPerRow  = int(wrapAt);
+        if (charsPerRow > chunkLen) charsPerRow = chunkLen;
+        if (charsPerRow < 1)        charsPerRow = 1;
+        int   numRows      = (chunkLen + charsPerRow - 1) / charsPerRow;
+        float boxW         = float(charsPerRow) * kernX + bubblePadding * 2.0;
+        float lineH        = charH * 1.35;            // breathing room between rows
+        float boxH         = float(numRows) * lineH + bubblePadding * 2.0
+                           - (numRows > 0 ? (lineH - charH) : 0.0);
+        vec2  halfBox      = vec2(boxW, boxH) * 0.5;
 
         // Pop-in scales the bubble.
         float scale = mix(0.6, 1.0, popIn);
@@ -279,28 +289,32 @@ void main() {
         bubbleAlpha = max(bubbleAlpha, fill * env);
         bubbleCol   = mix(bubbleCol, bubColor, fill * env);
 
-        // ─── Text inside bubble ───
-        // Bubble-local coords with text origin at top-left of inner area.
+        // ─── Text inside bubble (multi-row wrap) ───
+        // Coords: x=0 at inner-left, y=0 at inner-TOP (rows fall downward
+        // toward bottom of bubble). Each row is lineH tall; chars within
+        // a row sit on a charH-tall band.
         float innerL = -halfBox.x + bubblePadding;
-        float innerB = -halfBox.y + bubblePadding;
-        // Char advance — `kerning` uniform controls letter spacing
-        // multiplier (1.0 = touching, <1.0 = overlapping, >1.0 = airy).
-        float kern = charW * kerning;
+        float innerT =  halfBox.y - bubblePadding;
+        float lx     = (d.x - innerL);
+        float ly     = (innerT - d.y);          // y down
+        if (lx < 0.0 || ly < 0.0) continue;
 
-        // Position relative to inner top-left of text row.
-        float lx = (d.x - innerL);
-        float ly = (d.y - innerB);
-        if (lx < 0.0 || ly < 0.0 || ly > charH) continue;
+        int rowIdx = int(floor(ly / lineH));
+        if (rowIdx < 0 || rowIdx >= numRows) continue;
+        float yInRow = ly - float(rowIdx) * lineH;
+        if (yInRow > charH) continue;            // gap between rows
 
-        // Char index inside bubble.
-        int colIdx = int(floor(lx / kern));
-        if (colIdx < 0 || colIdx >= chunkLen) continue;
-        int globalIdx = k * chunkLen + colIdx;
+        int colIdx = int(floor(lx / kernX));
+        if (colIdx < 0 || colIdx >= charsPerRow) continue;
+
+        int charIdxInBubble = rowIdx * charsPerRow + colIdx;
+        if (charIdxInBubble >= chunkLen) continue;
+        int globalIdx = k * chunkLen + charIdxInBubble;
         if (globalIdx >= total) continue;
 
         int ch = getChar(globalIdx);
-        vec2 cellLocal = vec2((lx - float(colIdx) * kern) / charW,
-                              ly / charH);
+        vec2 cellLocal = vec2((lx - float(colIdx) * kernX) / charW,
+                              yInRow / charH);
         float s = sampleChar(ch, cellLocal);
         s = smoothstep(0.18, 0.55, s);
         if (s > 0.001) {
