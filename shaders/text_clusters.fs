@@ -14,8 +14,8 @@
     { "NAME": "nodeRadius", "LABEL": "Node Radius", "TYPE": "float", "DEFAULT": 0.06, "MIN": 0.025, "MAX": 0.13 },
     { "NAME": "radiusVariance", "LABEL": "Radius Variance", "TYPE": "float", "DEFAULT": 0.55, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "orbitSpeed", "LABEL": "Orbit Speed", "TYPE": "float", "DEFAULT": 0.15, "MIN": 0.0, "MAX": 1.5 },
-    { "NAME": "textScale", "LABEL": "Text Size", "TYPE": "float", "DEFAULT": 0.05, "MIN": 0.018, "MAX": 0.10 },
-    { "NAME": "kerning", "LABEL": "Kerning", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.6, "MAX": 1.5 },
+    { "NAME": "textScale", "LABEL": "Text Size", "TYPE": "float", "DEFAULT": 0.026, "MIN": 0.012, "MAX": 0.08 },
+    { "NAME": "kerning", "LABEL": "Kerning", "TYPE": "float", "DEFAULT": 0.85, "MIN": 0.55, "MAX": 1.4 },
     { "NAME": "audioReact", "LABEL": "Audio React", "TYPE": "float", "DEFAULT": 0.7, "MIN": 0.0, "MAX": 2.0 },
     { "NAME": "autoTextColor", "LABEL": "Auto Text Color", "TYPE": "bool", "DEFAULT": 1.0 },
     { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.42, 0.42, 0.45, 1.0] },
@@ -109,6 +109,35 @@ vec2  hash21(float n) { return vec2(hash11(n), hash11(n + 17.31)); }
 float smin(float a, float b, float k) {
     float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
     return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Smooth-min variant that ALSO returns the blend factor `h`. h=1 means
+// "a" wins, h=0 means "b" wins, anything between is the bridge zone
+// — used to mix the two clusters' colors along the connecting tissue.
+float smin_h(float a, float b, float k, out float h) {
+    h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// Cheap value noise + 3-octave fbm — used as the slow morphing field
+// that perturbs the bridge SDF so connections feel organic, not linear.
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash11(dot(i, vec2(1.0, 157.0)));
+    float b = hash11(dot(i + vec2(1.0, 0.0), vec2(1.0, 157.0)));
+    float c = hash11(dot(i + vec2(0.0, 1.0), vec2(1.0, 157.0)));
+    float d = hash11(dot(i + vec2(1.0, 1.0), vec2(1.0, 157.0)));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm2(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; i++) {
+        v += a * vnoise(p);
+        p = p * 2.07 + vec2(11.3, 5.7);
+        a *= 0.5;
+    }
+    return v;
 }
 
 void main() {
@@ -237,24 +266,52 @@ void main() {
         // softer appearance).
         clusterSdf -= (env - 1.0) * 0.005;
 
-        if (clusterSdf < blobSdf) {
+        // ─── Inter-cluster bridge ───────────────────────────────
+        // Chain smooth-min ALL clusters into the running compositeSdf
+        // with a wider k than intra-cluster. Distant clusters retain
+        // their separate silhouettes; close ones grow connecting
+        // ribbons. The h factor blends the two clusters' colors
+        // along the bridge so the underlying tissue reads smoothly.
+        float bk = max(interBridgeK, 0.001);
+        if (c == 0) {
             blobSdf = clusterSdf;
             blobCol = cTint;
+        } else {
+            float h;
+            blobSdf = smin_h(blobSdf, clusterSdf, bk, h);
+            // h=1 means existing wins; h=0 means current wins.
+            blobCol = mix(cTint, blobCol, h);
         }
 
-        // Anti-aliased fill check for the pixel.
+        // Anti-aliased fill check for the pixel — uses the per-cluster
+        // SDF so text only renders inside its OWN cluster (the bridges
+        // are background tissue, not text-bearing nodes).
         float fw   = fwidth(clusterSdf);
         float fill = 1.0 - smoothstep(-fw, fw, clusterSdf);
         if (fill < 0.001) continue;
 
         // ─── Text inside the nearest node ────────────────────────
         // Each node renders chunkLen characters across its diameter.
-        // Cell-local coords centered on the node.
+        // Cell-local coords centered on the node. Tight cap on
+        // text height (40% of node radius) keeps glyphs INSIDE the
+        // circle with breathing room — was 95% which let glyphs
+        // bleed onto the silhouette and read poorly.
         vec2 localP = p - nearestPos;
-        // Use the node radius to size the text row.
-        float effCharH = min(charH, nearestRad * 0.95);
+        float effCharH = min(charH, nearestRad * 0.40);
         float effCharW = effCharH * (5.0 / 7.0);
         float effKern  = effCharW * kerning;
+        // Skip rendering text if the chunk wouldn't fit in this
+        // circle — keeps cluster silhouettes clean rather than
+        // showing fragments of letters cut by the SDF edge.
+        float chunkRowW = float(chunkLen) * effKern;
+        float maxRowW   = nearestRad * 1.55;
+        if (chunkRowW > maxRowW) {
+            // Auto-shrink to fit instead of skipping.
+            float scale = maxRowW / chunkRowW;
+            effCharH *= scale;
+            effCharW *= scale;
+            effKern  *= scale;
+        }
 
         // Offset within the node's diameter.
         float lx = localP.x + float(chunkLen) * effKern * 0.5;
@@ -288,6 +345,15 @@ void main() {
             charMask = max(charMask, w);
             textCol  = mix(textCol, inkColor, w);
         }
+    }
+
+    // Slow morphing perturbation on the bridges — nudges the SDF
+    // by a low-frequency fbm so the connecting tissue between
+    // clusters wobbles and blooms organically rather than reading
+    // as straight metaball capsules.
+    if (morphAmp > 0.001) {
+        float n = fbm2(p * 1.4 + vec2(TIME * 0.07, TIME * -0.05));
+        blobSdf -= (n - 0.5) * morphAmp * 0.07;
     }
 
     // Compose: bg ← cluster blob ← text ink.
