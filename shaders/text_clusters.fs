@@ -162,11 +162,15 @@ void main() {
     float charW     = charH * (5.0 / 7.0);
     float kern      = charW * kerning;
 
-    // Total chars in one round across all clusters; each node gets one
-    // chunk of the message. chunkLen rounds up so a long msg fills out.
-    int totalNodes = clusters * nodesEach;
-    int chunkLen   = (total + totalNodes - 1) / totalNodes;
-    if (chunkLen < 1) chunkLen = 1;
+    // Each node renders a SHORT-SENTENCE-SIZED slice of the message,
+    // not a 2-char fragment. Default ~8 chars per node so a single
+    // word or short phrase fits per circle. Auto-shrink in the cell
+    // sizing block below scales the slice down if a long word would
+    // overflow the node radius.
+    int chunkLen = total / max(clusters, 1);
+    if (chunkLen < 8)         chunkLen = 8;
+    if (chunkLen > total)     chunkLen = total;
+    if (chunkLen > 16)        chunkLen = 16;
 
     // Each cluster's life cycles every `lifetime` seconds. Phase staggered
     // by clusterIdx/clusters so spawns never bunch up.
@@ -321,9 +325,12 @@ void main() {
         int colIdx = int(floor(lx / effKern));
         if (colIdx < 0 || colIdx >= chunkLen) continue;
 
-        // Global character index across all clusters * nodes.
-        int globalIdx = (c * nodesEach + nearestNode) * chunkLen + colIdx;
-        if (globalIdx >= total) continue;
+        // Global character index, wrapped mod `total` so every node
+        // shows a piece of the message (otherwise nodes whose offset
+        // exceeds total would be empty).
+        int rawIdx    = (c * nodesEach + nearestNode) * chunkLen + colIdx;
+        int globalIdx = rawIdx - (rawIdx / total) * total;
+        if (globalIdx < 0 || globalIdx >= total) continue;
 
         int ch = getChar(globalIdx);
         if (ch < 0 || ch > 36) continue;
