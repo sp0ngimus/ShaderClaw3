@@ -19,7 +19,8 @@
     { "NAME": "specPow", "LABEL": "Spec Power", "TYPE": "float", "DEFAULT": 48.0, "MIN": 4.0, "MAX": 128.0 },
     { "NAME": "iridescence", "LABEL": "Iridescence", "TYPE": "float", "DEFAULT": 0.6, "MIN": 0.0, "MAX": 1.5 },
     { "NAME": "texBlend", "LABEL": "Tex Blend", "TYPE": "float", "DEFAULT": 0.0, "MIN": 0.0, "MAX": 1.0 },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false }
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false },
+    { "NAME": "mpPoseActive", "LABEL": "Pose Active", "TYPE": "float", "DEFAULT": 0.0, "MIN": 0.0, "MAX": 1.0 }
   ],
   "PASSES": [
     { "TARGET": "velBuf", "PERSISTENT": true },

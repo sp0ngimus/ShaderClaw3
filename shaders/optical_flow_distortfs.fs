@@ -52,7 +52,8 @@
     },
     {
       "NAME" : "resetNow",
-      "TYPE" : "event",
+      "TYPE" : "bool",
+      "DEFAULT" : 0,
       "LABEL" : "Restart"
     }
   ],
@@ -74,15 +75,9 @@
 */
 
 
-varying vec2 left_coord;
-varying vec2 right_coord;
-varying vec2 above_coord;
-varying vec2 below_coord;
-
-varying vec2 lefta_coord;
-varying vec2 righta_coord;
-varying vec2 leftb_coord;
-varying vec2 rightb_coord;
+// `varying` decls were paired with a vertex shader (.vs) that ships
+// elsewhere in the original ISF v002 port; this fragment-only build
+// computes the 8 stencil offsets locally inside main() instead.
 
 
 //	based on v002 Optical Flow which is itself a port of Andrew Bensons HS Flow implementation on the GPU.
@@ -98,6 +93,18 @@ float gray(vec4 n)
 
 void main()
 {
+	// 8-tap stencil neighbours, replacing the original .vs-supplied
+	// varyings. One pixel step horizontal/vertical + 4 diagonals.
+	vec2 px = 1.0 / RENDERSIZE;
+	vec2 left_coord   = isf_FragNormCoord.xy + vec2(-px.x,  0.0);
+	vec2 right_coord  = isf_FragNormCoord.xy + vec2( px.x,  0.0);
+	vec2 above_coord  = isf_FragNormCoord.xy + vec2( 0.0,   px.y);
+	vec2 below_coord  = isf_FragNormCoord.xy + vec2( 0.0,  -px.y);
+	vec2 lefta_coord  = isf_FragNormCoord.xy + vec2(-px.x,  px.y);
+	vec2 righta_coord = isf_FragNormCoord.xy + vec2( px.x,  px.y);
+	vec2 leftb_coord  = isf_FragNormCoord.xy + vec2(-px.x, -px.y);
+	vec2 rightb_coord = isf_FragNormCoord.xy + vec2( px.x, -px.y);
+
 	//	on the first pass generate the mask using the previous delayBuffer and inputImage
 	//	on the 2nd pass update the delayBuffer to hold inputImage
 	//	on the 3rd pass output the new mask

@@ -655,16 +655,11 @@ vec4 effectSpacy(vec2 uv, int sub) {
 }
 
 // =======================================================================
-// EFFECT 20: VARIABLE FONT - canvas-rendered text via texture
+// EFFECT 20: VARIABLE FONT — removed. The original implementation depended
+// on a `varFontTex` image input that the host (Easel) never wired up, so
+// this branch failed to compile. The enum stops at 19 (Spacy Recede); the
+// fallback below uses Spacy 3 if a stale value (>= 20) is ever sent in.
 // =======================================================================
-
-vec4 effectVarFont(vec2 uv) {
-    vec4 tex = texture2D(varFontTex, uv);
-    float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 col = transparentBg ? textColor.rgb * lum : mix(bgColor.rgb, textColor.rgb, lum);
-    float alpha = transparentBg ? lum : 1.0;
-    return vec4(col, alpha);
-}
 
 // =======================================================================
 // MAIN DISPATCHER
@@ -695,7 +690,6 @@ void main() {
     else if (e == 17) col = effectSpacy(uv, 1);
     else if (e == 18) col = effectSpacy(uv, 2);
     else if (e == 19) col = effectSpacy(uv, 3);
-    else if (e == 20) col = effectVarFont(uv);
     else              col = effectSpacy(uv, 3);
 
     // Voice decay glitch - subtle digital artifact as text fades
