@@ -9,9 +9,9 @@
     { "NAME": "intensity", "LABEL": "Glitch", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.5 },
     { "NAME": "density", "LABEL": "Dissolve", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.5 },
     { "NAME": "textScale", "LABEL": "Size", "TYPE": "float", "MIN": 0.3, "MAX": 2.0, "DEFAULT": 1.0 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
-    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [0.0, 1.0, 1.0, 1.0] },
+    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.03, 1.0] },
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false }
   ]
 }*/
 
@@ -91,6 +91,47 @@ float sampleChar(int ch, vec2 uv) {
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
 // =======================================================================
+// BACKGROUND: Holographic Hex Grid HUD (2030s sci-fi aesthetic)
+// =======================================================================
+
+vec3 hexHudBg(vec2 uv, float t) {
+    // Axial hex grid
+    vec2 p = uv * 8.0; // scale to hex grid
+
+    // Hex grid coordinates (flat-top hexagons)
+    vec2 h = vec2(p.x / 1.732051, p.y);
+    vec2 a = vec2(mod(h.x + h.y, 2.0), 0.0);
+    vec2 gi = floor(h + 0.5 * a) - a * 0.5;
+    vec2 gf = h - gi;
+    float hexDist = max(abs(gf.x), abs(gf.x * 0.5 + gf.y * 0.866));
+
+    float border = smoothstep(0.46, 0.44, hexDist);
+    float fill = smoothstep(0.44, 0.40, hexDist);
+
+    // Node pulse at hex centers
+    float nodeSeed = fract(sin(dot(gi, vec2(127.1, 311.7))) * 43758.5453);
+    float nodePulse = 0.5 + 0.5 * sin(t * (2.0 + nodeSeed * 3.0) + nodeSeed * 6.28);
+    float nodeGlow = exp(-hexDist * hexDist * 40.0) * nodePulse;
+
+    // Active hex (lit up)
+    float activeT = fract(nodeSeed * 3.7 + t * 0.1);
+    float active = step(0.7, activeT);
+
+    vec3 voidCol = vec3(0.0, 0.0, 0.02);
+    vec3 gridCol = vec3(0.0, 0.3, 1.8); // electric blue grid lines
+    vec3 fillCol = vec3(0.0, 0.05, 0.2); // dim hex interior
+    vec3 activeCol = vec3(0.3, 0.0, 1.8); // violet active hex
+    vec3 nodeCol = vec3(0.0, 1.5, 2.5); // cyan node pulse
+
+    vec3 col = voidCol;
+    col = mix(col, fillCol, fill * (0.3 + active * 0.7));
+    col = mix(col, mix(gridCol, activeCol, active), border);
+    col += nodeCol * nodeGlow * 2.0 * (1.0 + active);
+
+    return col;
+}
+
+// =======================================================================
 // EFFECT: DIGIFADE - glitch dissolve
 // =======================================================================
 
@@ -153,7 +194,8 @@ vec4 effectDigifade(vec2 uv, int sub) {
         }
     }
 
-    vec3 fc = mix(bgColor.rgb, textColor.rgb, textHit);
+    vec3 bg = hexHudBg(uv, TIME * speed);
+    vec3 fc = mix(bg, textColor.rgb, textHit);
     float a = 1.0;
     if (transparentBg) { a = textHit; fc = textColor.rgb; }
     return vec4(fc, a);
