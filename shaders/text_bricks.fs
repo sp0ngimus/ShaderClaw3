@@ -9,9 +9,9 @@
     { "NAME": "intensity", "LABEL": "Displacement", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.5 },
     { "NAME": "density", "LABEL": "Grid Density", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.5 },
     { "NAME": "textScale", "LABEL": "Size", "TYPE": "float", "MIN": 0.3, "MAX": 2.0, "DEFAULT": 1.0 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 0.0, 0.8, 1.0] },
     { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false }
   ]
 }*/
 
@@ -91,6 +91,61 @@ float sampleChar(int ch, vec2 uv) {
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
 // =======================================================================
+// BACKGROUND: Cyberpunk Night City Skyline — 3D-perspective procedural
+// =======================================================================
+
+vec3 nightCityBg(vec2 uv, float t) {
+    vec3 col = vec3(0.0, 0.0, 0.005); // void night sky
+
+    // Perspective floor grid (street grid)
+    vec2 p = uv;
+    float horizon = 0.1;
+    if (p.y < horizon) {
+        // Ground plane perspective
+        float depth = 1.0 / max(0.001, horizon - p.y + 0.05);
+        vec2 gp = vec2(p.x * depth * 3.0 + t * 0.3, depth * 2.0);
+        vec2 gf = fract(gp);
+        float grid = min(gf.x, gf.y);
+        grid = min(grid, 1.0 - gf.x);
+        grid = min(grid, 1.0 - gf.y);
+        float gridLine = smoothstep(0.06, 0.0, grid);
+        col += vec3(0.8, 0.0, 1.6) * gridLine * 1.5; // magenta grid
+    }
+
+    // Building silhouettes on horizon
+    for (float i = 0.0; i < 12.0; i++) {
+        float fi = i / 12.0;
+        float bx = (fi - 0.5) * 3.0;
+        float bw = 0.08 + sin(i * 7.3) * 0.04;
+        float bh = 0.2 + sin(i * 13.7) * 0.15;
+        float btop = horizon + bh;
+
+        // Building body
+        float inBuilding = step(abs(uv.x - bx), bw) * step(uv.y, btop) * step(horizon, uv.y);
+        col = mix(col, vec3(0.01, 0.01, 0.02), inBuilding);
+
+        // Windows on building
+        if (inBuilding > 0.5) {
+            vec2 wp = vec2((uv.x - bx + bw) / (bw * 2.0), (uv.y - horizon) / bh);
+            vec2 wg = fract(wp * vec2(4.0, 8.0));
+            float win = step(0.2, wg.x) * step(0.2, wg.y) * step(wg.x, 0.8) * step(wg.y, 0.8);
+            float wlit = step(0.5, sin(i * 31.7 + floor(wp.y * 8.0) * 17.3 + t * 0.1));
+            float winCol = win * wlit;
+            col += vec3(2.0, 1.2, 0.0) * winCol; // warm gold windows HDR
+        }
+
+        // Rooftop neon sign
+        float signW = bw * 0.7;
+        float atTop = step(abs(uv.x - bx), signW) * step(abs(uv.y - btop), 0.01);
+        float neonHue = fi;
+        vec3 neonCol = (neonHue < 0.5) ? vec3(0.0, 1.5, 2.0) : vec3(2.0, 0.0, 1.0);
+        col += neonCol * atTop * 2.0;
+    }
+
+    return col;
+}
+
+// =======================================================================
 // EFFECT: BRICKS - grid with animated displacement
 // =======================================================================
 
@@ -142,12 +197,18 @@ vec4 effectBricks(vec2 uv, int sub) {
         }
     }
 
+    // Cyberpunk city background
+    vec3 cityBg = nightCityBg(uv, TIME * speed);
+
+    // Hot magenta text with 2.2x HDR boost
+    vec3 textHDR = textColor.rgb * 2.2;
+
     bool inv = mod(ri, 2.0) < 1.0;
-    vec3 fg = inv ? bgColor.rgb : textColor.rgb;
-    vec3 bg = inv ? textColor.rgb : bgColor.rgb;
+    vec3 fg = inv ? cityBg : textHDR;
+    vec3 bg = inv ? textHDR : cityBg;
     vec3 fc = mix(bg, fg, textHit);
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) { a = textHit; fc = textHDR; }
     return vec4(fc, a);
 }
 
