@@ -12,9 +12,9 @@
     { "NAME": "oscSpeed", "LABEL": "Osc Speed", "TYPE": "float", "MIN": 0.0, "MAX": 10.0, "DEFAULT": 0.0 },
     { "NAME": "oscAmount", "LABEL": "Osc Amount", "TYPE": "float", "MIN": 0.0, "MAX": 0.2, "DEFAULT": 0.0 },
     { "NAME": "oscSpread", "LABEL": "Osc Spread", "TYPE": "float", "MIN": 0.0, "MAX": 2.0, "DEFAULT": 0.5 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
-    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 0.7, 0.0, 1.0] },
+    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [1.0, 0.4, 0.0, 1.0] },
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false }
   ]
 }*/
 
@@ -94,6 +94,80 @@ float sampleChar(int ch, vec2 uv) {
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
 // =======================================================================
+// BACKGROUND: TROPICAL SUNSET
+// Warm nature antithesis of cold space — gold/orange/magenta sky,
+// sun disc, ocean shimmer, BLACK INK palm tree silhouettes
+// =======================================================================
+
+vec3 tropicalSunsetBg(vec2 uv, float t) {
+    float y = uv.y * 2.0 - 1.0; // remap to -1..1 (bottom to top)
+
+    // Sky gradient: gold at horizon, orange, magenta, deep violet at top
+    vec3 gold     = vec3(2.8, 2.0, 0.1);   // bright horizon gold HDR
+    vec3 orange   = vec3(2.5, 0.9, 0.0);   // orange band
+    vec3 hotPink  = vec3(2.0, 0.2, 0.8);   // hot magenta/pink
+    vec3 violet   = vec3(0.3, 0.0, 0.5);   // deep violet at top
+    vec3 navyTop  = vec3(0.02, 0.0, 0.08); // near-black at zenith
+
+    float hy = clamp(y * 0.5 + 0.5, 0.0, 1.0); // 0 at bottom, 1 at top
+    vec3 sky;
+    if (hy < 0.25)      sky = mix(gold,    orange,  hy / 0.25);
+    else if (hy < 0.5)  sky = mix(orange,  hotPink, (hy - 0.25) / 0.25);
+    else if (hy < 0.75) sky = mix(hotPink, violet,  (hy - 0.5)  / 0.25);
+    else                sky = mix(violet,  navyTop, (hy - 0.75) / 0.25);
+
+    // Sun disc — just above horizon centre
+    vec2 sunPos  = vec2(0.0, -0.15);
+    float sunDist = length(vec2(uv.x * 2.0 - 1.0, y) - sunPos);
+    float sun     = smoothstep(0.15, 0.12, sunDist);
+    float sunGlow = exp(-sunDist * sunDist * 4.0) * 1.5;
+    sky += vec3(3.0, 2.5, 0.5) * sun + vec3(1.5, 0.8, 0.0) * sunGlow;
+
+    // Ocean at bottom
+    if (y < -0.1) {
+        float oceanBlend = clamp((-y - 0.1) / 0.4, 0.0, 1.0);
+        vec3 ocean = vec3(0.02, 0.05, 0.15); // dark deep blue
+        float shimmer = sin((uv.x * 2.0 - 1.0) * 12.0 + t * 2.0)
+                      * sin((uv.x * 2.0 - 1.0) *  7.0 - t * 1.5) * 0.5 + 0.5;
+        float shimV = shimmer * (1.0 - oceanBlend) * 0.5;
+        vec3 oceanCol = mix(mix(gold, ocean, 0.7), ocean, oceanBlend)
+                      + vec3(1.5, 1.0, 0.0) * shimV;
+        sky = mix(sky, oceanCol, smoothstep(-0.1, -0.3, y));
+    }
+
+    // Palm tree silhouettes — BLACK INK against the sunset
+    float xu = uv.x * 2.0 - 1.0; // -1..1 horizontal
+
+    // Left trunk (slight sway)
+    float trunk1 = smoothstep(0.025, 0.01, abs(xu + 0.6 + sin(y * 2.0 + t * 0.3) * 0.02))
+                 * step(y, -0.05) * step(-0.5, y);
+    // Right trunk (opposing sway)
+    float trunk2 = smoothstep(0.025, 0.01, abs(xu - 0.65 + sin(y * 2.5 - t * 0.25) * 0.03))
+                 * step(y, 0.0) * step(-0.55, y);
+
+    // Palm fronds — 5 arching leaves per tree (left tree only for performance)
+    float frond = 0.0;
+    vec2 pt1 = vec2(-0.6, -0.05); // crown of left trunk
+    for (float i = 0.0; i < 5.0; i++) {
+        float fi = i / 5.0;
+        float fang = -1.5 + fi * 3.0; // sweep -90deg to +90deg
+        vec2 frondDir = vec2(cos(fang), sin(fang) * 0.5 + 0.1);
+        vec2 fp1 = vec2(xu, y) - pt1;
+        float ft1 = dot(fp1, frondDir);
+        float frondL = 0.35 + sin(t * 0.5 + fi) * 0.03;
+        float frondW = 0.015;
+        float across = abs(dot(fp1, vec2(-frondDir.y, frondDir.x)));
+        frond += smoothstep(frondW, 0.0, across)
+               * step(0.0, ft1) * step(ft1, frondL);
+    }
+
+    float silhouette = clamp(trunk1 + trunk2 + frond, 0.0, 1.0);
+    sky = mix(sky, vec3(0.0), silhouette);
+
+    return sky;
+}
+
+// =======================================================================
 // EFFECT: SPACY - perspective tunnel rows
 // =======================================================================
 
@@ -145,12 +219,18 @@ vec4 effectSpacy(vec2 uv, int sub) {
         }
     }
 
+    // Background: tropical sunset landscape
+    vec3 sunsetBg = tropicalSunsetBg(uv, TIME);
+
+    // Text: deep gold with 2x HDR boost composited over sunset bg
+    vec3 textCol = textColor.rgb * 2.0;
+
     bool inv = mod(ri, 2.0) < 1.0;
-    vec3 fg = inv ? bgColor.rgb : textColor.rgb;
-    vec3 bg = inv ? textColor.rgb : bgColor.rgb;
+    vec3 fg = inv ? sunsetBg : textCol;
+    vec3 bg = inv ? textCol  : sunsetBg;
     vec3 fc = mix(bg, fg, textHit);
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) { a = textHit; fc = textCol; }
     return vec4(fc, a);
 }
 
