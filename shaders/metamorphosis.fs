@@ -16,7 +16,9 @@
 }*/
 
 #define TAU 6.28318530718
-#define MAX_STEPS 48
+// 48 steps was too few for the morphing SDF — gave horizon banding on
+// grazing rays. 96 is the sweet spot for organic blob silhouettes.
+#define MAX_STEPS 96
 #define MAX_DIST 20.0
 #define SURF_DIST 0.002
 #define BLOB_MAX 6

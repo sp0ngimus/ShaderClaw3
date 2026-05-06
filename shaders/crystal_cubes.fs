@@ -48,7 +48,8 @@
   ]
 }*/
 
-#define MAX_STEPS 48
+// 48 → 96: crystal-cube edges showed step staircasing on grazing rays.
+#define MAX_STEPS 96
 #define SURF_DIST 0.002
 #define MAX_DIST 20.0
 
