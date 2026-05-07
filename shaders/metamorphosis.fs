@@ -310,5 +310,8 @@ void main() {
       col = mix(col, floor(col * 4.0 + 0.5) / 4.0, _f * 0.75);
   }
 
+  // Persistent LUT snap: 5 levels per channel — steady palette entropy at all TIME values
+  col = mix(col, floor(col * 5.0 + 0.5) / 5.0, 0.2);
+
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), alpha);
 }
