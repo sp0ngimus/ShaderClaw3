@@ -28,7 +28,9 @@ vec4 passSwirl(vec2 fragCoord) {
     vec2 nfrag = fragCoord / res;
     vec4 col = vec4(sin(t * vec3(13.0, 11.0, 17.0) + nfrag.xyx * 3.0) * 0.5 + 0.5, 1.0);
 
-    vec2 spotCenter = sin(vec2(11.0, 13.0) * t) * 60.0 + res * 0.5;
+    float audioScale = 1.0 + audioLevel * 1.5;
+    vec2 spotDrift = vec2(cos(t * 0.5), sin(t * 0.7)) * 50.0 * audioScale;
+    vec2 spotCenter = sin(vec2(11.0, 13.0) * t) * 60.0 * audioScale + spotDrift + res * 0.5;
     float idx = smoothstep(6.0 * spotSize, 20.0 * spotSize, length(fragCoord - spotCenter));
 
     // Spatially-varying background hue — raises palette entropy across audit frames.
