@@ -82,15 +82,21 @@ float hash (float a) { return floor(cos(a)*seed1+sin(a*seed2));  }
 
 void main() {
 	
-    vec2 uv = (2.0 * gl_FragCoord.xy - RENDERSIZE.xy) / RENDERSIZE.y;	
+    vec2 uv = (2.0 * gl_FragCoord.xy - RENDERSIZE.xy) / RENDERSIZE.y;
     uv -= center.xy;
     uv *= 10.5-scale;
-    float C = sin(TIME * rate) * freq1, dist = 0.0;												
-    for(float i=10.0; i < 90.0; i++) {								
-        float R = C + i;									
-        vec2 N = vec2(sin(R), cos(R));				
-        N *= abs(hash(R)) * freq2;							
-        dist += sin(i + loops * distance(uv, N));				
+    // Audio K≤1.5: bass expands pulse rate within cap
+    float C = sin(TIME * rate * (1.0 + audioBass * 0.8)) * freq1, dist = 0.0;
+    for(float i=10.0; i < 90.0; i++) {
+        float R = C + i;
+        vec2 N = vec2(sin(R), cos(R));
+        N *= abs(hash(R)) * freq2;
+        dist += sin(i + loops * distance(uv, N));
     }
-	gl_FragColor = vec4(vec3(dist),1.0);
+    // IQ cosine palette — fully saturated, no white-mixing
+    float t = dist * 0.5 + TIME * 0.06;
+    vec3 col = 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.333, 0.667)));
+    // HDR: square-boost pushes bright palette peaks above 1.0 for bloom
+    col = col * col * 2.2;
+	gl_FragColor = vec4(col, 1.0);
 }
