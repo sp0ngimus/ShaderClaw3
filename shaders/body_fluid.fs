@@ -4,7 +4,7 @@
   "CATEGORIES": ["VFX", "Simulation"],
   "INPUTS": [
     { "NAME": "inputTex", "LABEL": "Image/Video", "TYPE": "image" },
-    { "NAME": "fluidSpeed", "LABEL": "Fluid Speed", "TYPE": "float", "DEFAULT": 4.0, "MIN": 0.5, "MAX": 15.0 },
+    { "NAME": "fluidSpeed", "LABEL": "Fluid Speed", "TYPE": "float", "DEFAULT": 2.0, "MIN": 0.5, "MAX": 8.0 },
     { "NAME": "bonePull", "LABEL": "Bone Pull", "TYPE": "float", "DEFAULT": 2.0, "MIN": 0.0, "MAX": 5.0 },
     { "NAME": "boneRadius", "LABEL": "Bone Radius", "TYPE": "float", "DEFAULT": 0.2, "MIN": 0.03, "MAX": 0.5 },
     { "NAME": "bodyFollow", "LABEL": "Body Follow", "TYPE": "float", "DEFAULT": 5.0, "MIN": 0.0, "MAX": 15.0 },
@@ -231,7 +231,7 @@ void main() {
             vec2 mDiff = uv - splatPos;
             mDiff.x *= aspect;
             float d2 = dot(mDiff, mDiff);
-            float bassR = splatRadius * (1.0 + audioBass * 3.0);
+            float bassR = splatRadius * (1.0 + audioBass * 1.5);
             if (d2 < bassR * bassR * 12.0) {
                 float falloff = exp(-d2 / (bassR * bassR));
                 vec2 outDir = normalize(splatPos - 0.5 + 0.001);
@@ -336,7 +336,9 @@ void main() {
     vec3 metal = metalColor.rgb * (diff + diff2);
     vec3 env = envColor * envBright * (1.0 - envElev * 0.5);
     vec3 col = mix(metal, env, 0.4 + dispMag * 2.0);
-    col += vec3(spec + spec2);
+    // HDR specular: primary spec peaks at specAmount (default 2.0) — already > 1.0;
+    // secondary spec boosted × 1.5 to push metallic sheen into bloom territory
+    col += vec3(spec) + vec3(spec2) * 1.5;
 
     // Optional texture blend
     if (texBlend > 0.0) {
