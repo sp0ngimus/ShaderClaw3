@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "ASCII art filter — converts any image/video to colored ASCII characters with ANSI palette matching",
+  "DESCRIPTION": "Aggressive motion: Matrix Glyph charset streams characters by design. ASCII art filter — converts any image/video to colored ASCII characters with ANSI palette matching",
   "CATEGORIES": ["Effect", "Text"],
   "INPUTS": [
     { "NAME": "inputTex", "LABEL": "Source", "TYPE": "image" },
@@ -213,7 +213,7 @@ void main() {
     } else if (csI == 5) {
         // Matrix glyphs: rotate the index over time so chars stream
         int base = int(clamp(lum * float(numChars - 1) + 0.5, 0.0, float(numChars - 1)));
-        charIdx = int(mod(float(base) + TIME * 6.0 + cell.y * 0.5, float(numChars)));
+        charIdx = int(mod(float(base) + TIME * 2.0 + cell.y * 0.5, float(numChars)));
     } else {
         charIdx = int(clamp(lum * float(numChars - 1) + 0.5, 0.0, float(numChars - 1)));
     }
@@ -279,10 +279,10 @@ void main() {
         else                 fg = mix(c2, c3, (lum - 0.66) / 0.34);
         bg = c0 * 0.6;
     } else {
-        // Cyberpunk — magenta/cyan/yellow on near-black with audio glow
+        // Cyberpunk — neon magenta/cyan/yellow HDR on near-black
         float h = fract(lum + TIME * 0.05);
         vec3 cyber = 0.5 + 0.5 * cos(6.28318 * h + vec3(0.0, 2.094, 4.188));
-        fg = cyber * (0.7 + audioBass * audioReact * 0.5);
+        fg = cyber * (1.8 + audioBass * audioReact * 0.5);
         bg = vec3(0.02, 0.0, 0.04);
     }
 
@@ -307,9 +307,9 @@ void main() {
     {
         vec2 _suv = gl_FragCoord.xy / RENDERSIZE;
         float _ph = fract(TIME / 13.0);
-        float _f  = smoothstep(0.0, 0.04, _ph) * smoothstep(0.20, 0.10, _ph);
+        float _f  = smoothstep(0.0, 0.15, _ph) * smoothstep(0.40, 0.20, _ph);
         float _band = exp(-pow((_suv.y - 0.5) * 30.0, 2.0));
-        result = mix(result, vec3(0.20, 0.95, 0.40), _f * _band * 0.5);
+        result = mix(result, vec3(0.25, 2.0, 0.50), _f * _band * 0.5);
     }
 
     gl_FragColor = vec4(result, alpha);
