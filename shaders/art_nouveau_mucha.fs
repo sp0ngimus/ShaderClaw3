@@ -9,7 +9,7 @@
     { "NAME": "swirlAmplitude", "LABEL": "Swirl Amplitude", "TYPE":"float","MIN":0.0, "MAX":0.30, "DEFAULT":0.10 },
     { "NAME": "swirlFreq",      "LABEL": "Swirl Frequency", "TYPE":"float","MIN":1.0, "MAX":12.0, "DEFAULT":4.5 },
     { "NAME": "swirlWidth",     "LABEL": "Swirl Width",     "TYPE":"float","MIN":0.001,"MAX":0.012,"DEFAULT":0.0035 },
-    { "NAME": "rotateSpeed",    "LABEL": "Animation Speed", "TYPE":"float","MIN":0.0, "MAX":2.0,  "DEFAULT":0.30 },
+    { "NAME": "rotateSpeed",    "LABEL": "Animation Speed", "TYPE":"float","MIN":0.0, "MAX":1.5,  "DEFAULT":0.25 },
     { "NAME": "lilyShow",       "LABEL": "Corner Lilies",   "TYPE":"float","MIN":0.0, "MAX":1.0,  "DEFAULT":0.85 },
     { "NAME": "lilySize",       "LABEL": "Lily Size",       "TYPE":"float","MIN":0.04,"MAX":0.18, "DEFAULT":0.10 },
     { "NAME": "midCartouche",   "LABEL": "Mid Cartouches",  "TYPE":"float","MIN":0.0, "MAX":1.0,  "DEFAULT":0.65 },
@@ -111,13 +111,14 @@ void main() {
     if (frameMask > 0.5) {
         // Mauve base
         vec3 frame = frameTint.rgb;
-        // Gold inner-edge highlight (closer to interior)
+        // Gold inner-edge highlight — HDR specular hot-spot at bevel peak
         float innerDist = fW - edgeMin;
         float innerEdge = smoothstep(0.0, 0.012, innerDist) * smoothstep(0.025, 0.005, innerDist);
-        frame = mix(frame, GOLD, innerEdge * goldStrength);
+        vec3 GOLD_HDR = GOLD * (1.0 + innerEdge * 1.3); // peaks ~2.2 linear at bevel center
+        frame = mix(frame, GOLD_HDR, innerEdge * goldStrength);
         // Gold outer-edge highlight
         float outerEdge = smoothstep(0.0, 0.008, edgeMin);
-        frame = mix(frame, BRONZE, (1.0 - outerEdge) * goldStrength * 0.4);
+        frame = mix(frame, BRONZE * 1.2, (1.0 - outerEdge) * goldStrength * 0.4);
         col = frame;
     }
 
@@ -137,9 +138,10 @@ void main() {
         float w = swirlWidth * (0.6 + hash11(fi * 17.9) * 0.9);
         float maskCore  = smoothstep(w, 0.0, d);
         float maskGlow  = smoothstep(w * 2.5, w * 0.8, d);
-        // Color: ink for the curve, gold halo
+        // Color: ink for the curve, HDR gold halo
         col = mix(col, INK, maskCore * 0.9);
-        col = mix(col, GOLD, (maskGlow - maskCore) * goldStrength * 0.65);
+        float haloGold = (maskGlow - maskCore) * goldStrength * 0.65;
+        col = mix(col, GOLD * 1.9, haloGold);
     }
 
     // ── Filigree spirals inside the frame band — extra ornamentation ─
@@ -164,7 +166,7 @@ void main() {
             vec2 c = anchor + inward * fW * 0.3 - vec2(-inward.y, inward.x) * fW * 0.4;
             float d = distToFiligree(uv, a, b, c);
             float maskF = smoothstep(swirlWidth * 1.4, 0.0, d);
-            col = mix(col, GOLD, maskF * goldStrength * 0.85);
+            col = mix(col, GOLD * 2.0, maskF * goldStrength * 0.85);
             // Tiny dot at the curl tip
             float dotMask = smoothstep(swirlWidth * 2.5, 0.0, length(uv - c));
             col = mix(col, INK, dotMask * 0.6);
@@ -206,7 +208,7 @@ void main() {
             if (fs < 0.5 || fs > 1.5 && fs < 2.5) d2.x *= 0.5; else d2.y *= 0.5;
             float r = length(d2);
             float oval = smoothstep(fW * 0.30, fW * 0.25, r);
-            col = mix(col, GOLD, oval * midCartouche * goldStrength * 0.85);
+            col = mix(col, GOLD * 1.8, oval * midCartouche * goldStrength * 0.85);
             // Inner ink dot
             float dot_ = smoothstep(fW * 0.10, fW * 0.07, r);
             col = mix(col, INK, dot_ * midCartouche * 0.55);
