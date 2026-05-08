@@ -10,7 +10,7 @@
     { "NAME": "mood",          "LABEL": "Mood (dark / bright)","TYPE": "float","DEFAULT": 0.5,  "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "adIntensity",   "LABEL": "Ad Brightness",      "TYPE": "float", "DEFAULT": 1.4,  "MIN": 0.0, "MAX": 3.0 },
     { "NAME": "variety",       "LABEL": "Building Variety",   "TYPE": "float", "DEFAULT": 0.85, "MIN": 0.0, "MAX": 1.0 },
-    { "NAME": "speed",         "LABEL": "Movement Speed",     "TYPE": "float", "DEFAULT": 0.7,  "MIN": 0.0, "MAX": 3.0 },
+    { "NAME": "speed",         "LABEL": "Movement Speed",     "TYPE": "float", "DEFAULT": 0.12, "MIN": 0.0, "MAX": 1.5 },
     { "NAME": "flightMode",    "LABEL": "Drive(0) / Fly(1)",  "TYPE": "float", "DEFAULT": 0.0,  "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "fog",           "LABEL": "Fog Density",        "TYPE": "float", "DEFAULT": 0.5,  "MIN": 0.0, "MAX": 1.0 }
   ]
@@ -196,7 +196,7 @@ void surfaceShade(vec3 p, vec3 n, vec2 cell, vec4 info,
     // Base surface = concrete where no window, lit window otherwise
     vec3 glass = mask * mix(vec3(0.08, 0.12, 0.18), winCol, lit);
     outCol = mix(concrete, glass, mask);
-    outEm  = lit * 1.6;
+    outEm  = lit * 2.8;
 
     // ── LED ad wall ─────────────────────────────────────────────────
     // Buildings tagged hasAd get an ad surface on their +X or +Z face
@@ -227,10 +227,10 @@ void surfaceShade(vec3 p, vec3 n, vec2 cell, vec4 info,
                 adCol = vec3(0.4 + 0.6 * sin(u * 8.0 + TIME),
                              0.3 + 0.7 * sin(v * 6.0 - TIME * 1.3),
                              0.6 + 0.4 * sin((u + v) * 4.0 + TIME * 0.7));
-                adCol = abs(adCol);
+                adCol = abs(adCol) * 2.0;
             }
             outCol = adCol;
-            outEm  = dot(adCol, vec3(0.33)) * adIntensity;
+            outEm  = dot(adCol, vec3(0.33)) * adIntensity * 1.5;
         }
     }
 }
@@ -301,9 +301,7 @@ void main() {
     // Mood: lift or crush the whole frame
     col = mix(col * 0.35, col * 1.25, mood);
 
-    // Tone map + mild contrast so emission reads without blowing out
-    col = col / (1.0 + col);
-    col = pow(col, vec3(0.85));
+    // Output linear HDR — downstream bloom/tonemapping handles compression.
 
     gl_FragColor = vec4(col, 1.0);
 }
