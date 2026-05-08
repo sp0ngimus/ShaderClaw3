@@ -1099,5 +1099,29 @@
       "Text"
     ],
     "file": "text_clusters.fs"
+  },
+  {
+    "id": 509,
+    "title": "Pixel Players",
+    "description": "Pixelated morphing face icons that always wear the same little white-rect eyes with shifting black pupils. Cycle palettes, archetypes, and gaze. Audio-reactive scale, color drift, and rare sparkle flecks.",
+    "type": "generator",
+    "categories": [
+      "Generator",
+      "Character",
+      "Audio"
+    ],
+    "file": "pixel_players.fs"
+  },
+  {
+    "id": 510,
+    "title": "Challah",
+    "description": "3D braided challah loaf — 3 to 6 strands woven around a central axis, golden crust with optional sesame seeds, smooth end-cap rolls, orbiting camera. Audio drives loaf swelling, braid spin, and high-frequency glaze shimmer.",
+    "type": "generator",
+    "categories": [
+      "Generator",
+      "3D",
+      "Audio Reactive"
+    ],
+    "file": "challah.fs"
   }
 ]
