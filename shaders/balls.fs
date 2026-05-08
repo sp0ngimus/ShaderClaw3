@@ -12,7 +12,7 @@
     { "NAME": "shadowSoftness", "LABEL": "Shadow Soft", "TYPE": "float", "DEFAULT": 0.6, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "bloomStr", "LABEL": "Bloom", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 3.0 },
     { "NAME": "bloomRadius", "LABEL": "Blur Size", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 3.0 },
-    { "NAME": "rotSpeed", "LABEL": "Orbit Speed", "TYPE": "float", "DEFAULT": 0.3, "MIN": 0.0, "MAX": 2.0 },
+    { "NAME": "rotSpeed", "LABEL": "Orbit Speed", "TYPE": "float", "DEFAULT": 0.07, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "bloomRatio", "LABEL": "Glow Ratio", "TYPE": "float", "DEFAULT": 0.4, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "metallic", "LABEL": "Metallic", "TYPE": "float", "DEFAULT": 0.8, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "audioDrive", "LABEL": "Audio Drive", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 5.0 },
@@ -64,7 +64,7 @@ vec2 mapScene(vec3 p, float count) {
             // 1: HEART PUMP — radius pulses with bass like a heartbeat
             float beat = pow(audioBass, 0.6) * audioDrive;
             float bpm  = 0.5 + 0.5 * sin(TIME * 4.0 + hash1(i * 5.17) * 6.28);
-            float pump = 1.0 + (beat * 0.30 + bpm * 0.10) * (0.5 + hash1(i * 7.7));
+            float pump = 1.0 + (beat * 0.12 + bpm * 0.10) * (0.5 + hash1(i * 7.7));
             center *= pump;
             // Slow rotation around y
             center.xz = mat2(ca * 0.5, -sa * 0.5, sa * 0.5, ca * 0.5) * center.xz;
@@ -233,9 +233,9 @@ vec4 passScene(vec2 uv) {
             col = mix(col, texCol, texMix);
         }
 
-        // Audio brightness boost for blooming spheres
+        // HDR base + audio brightness for blooming spheres — peaks 2.0+ linear.
         if (shouldBloom(hit.y)) {
-            col *= 1.0 + audioLevel * audioDrive * 0.5;
+            col *= 2.0 + audioLevel * audioDrive * 0.3;
         }
 
         // Encode bloom flag in alpha: 1.0 = bloom, 0.5 = no bloom
