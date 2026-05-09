@@ -1,6 +1,6 @@
 /*{
   "CATEGORIES": ["Generator", "Text"],
-  "DESCRIPTION": "Digifade - glitch dissolve",
+  "DESCRIPTION": "Digifade — glitch dissolve with thermal infrared false-color field. Text appears as heat signatures; cold zones are near-black, hot zones white-amber. HDR text 2.8× for bloom. Palette: void black → crimson → amber → white-hot.",
   "INPUTS": [
     { "NAME": "msg", "TYPE": "text", "DEFAULT": " ETHEREA", "MAX_LENGTH": 48 },
     { "NAME": "preset", "LABEL": "Style", "TYPE": "long", "VALUES": [0,1], "LABELS": ["Digifade","Digifade Glitch"], "DEFAULT": 0 },
@@ -9,9 +9,11 @@
     { "NAME": "intensity", "LABEL": "Glitch", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.5 },
     { "NAME": "density", "LABEL": "Dissolve", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.5 },
     { "NAME": "textScale", "LABEL": "Size", "TYPE": "float", "MIN": 0.3, "MAX": 2.0, "DEFAULT": 1.0 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
-    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 0.9, 0.4, 1.0] },
+    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.02, 1.0] },
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false },
+    { "NAME": "hdrBoost", "LABEL": "HDR Boost", "TYPE": "float", "DEFAULT": 2.8, "MIN": 1.0, "MAX": 4.0 },
+    { "NAME": "thermalNoise", "LABEL": "Thermal Noise", "TYPE": "float", "DEFAULT": 0.4, "MIN": 0.0, "MAX": 1.0 }
   ]
 }*/
 
@@ -91,6 +93,33 @@ float sampleChar(int ch, vec2 uv) {
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
 // =======================================================================
+// THERMAL INFRARED BACKGROUND
+// =======================================================================
+
+float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+    vec2 i = floor(p); vec2 f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    return mix(mix(hash21(i), hash21(i+vec2(1,0)), f.x),
+               mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), f.x), f.y);
+}
+
+vec3 thermalBg(vec2 uv) {
+    // Thermal noise field — slow drift
+    float n = vnoise(uv * 4.0 + vec2(TIME * 0.08, TIME * 0.05));
+    n = n * 0.6 + vnoise(uv * 9.0 + vec2(TIME * 0.12, -TIME * 0.07)) * 0.4;
+    n = clamp(n * (0.5 + thermalNoise * 0.8), 0.0, 1.0);
+    // False-color palette: cold=black → cool=deep crimson → warm=orange → hot=white-amber
+    vec3 cold   = vec3(0.0, 0.0, 0.02);
+    vec3 cool   = vec3(0.4, 0.0, 0.15);
+    vec3 warm   = vec3(1.0, 0.3, 0.0);
+    vec3 hot    = vec3(1.0, 0.85, 0.5);
+    if (n < 0.33) return mix(cold, cool, n / 0.33);
+    if (n < 0.66) return mix(cool, warm, (n-0.33)/0.33);
+    return mix(warm, hot, (n-0.66)/0.34);
+}
+
+// =======================================================================
 // EFFECT: DIGIFADE - glitch dissolve
 // =======================================================================
 
@@ -153,9 +182,15 @@ vec4 effectDigifade(vec2 uv, int sub) {
         }
     }
 
-    vec3 fc = mix(bgColor.rgb, textColor.rgb, textHit);
+    vec3 bgThermal = thermalBg(uv);
+    vec3 fc;
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) {
+        a = textHit;
+        fc = textColor.rgb * hdrBoost;
+    } else {
+        fc = mix(bgThermal, textColor.rgb * hdrBoost, smoothstep(0.2, 0.8, textHit));
+    }
     return vec4(fc, a);
 }
 
