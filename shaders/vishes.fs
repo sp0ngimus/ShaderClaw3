@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Vishes — cellular random walkers leaving hue-drifting color trails on a slow-fading grid",
+  "DESCRIPTION": "Vishes Mandala — cellular walkers leave hue-drifting trails in N-fold kaleidoscope symmetry. 8-fold default creates mandala patterns; all trails are fully saturated HDR 2.5×. LINEAR HDR out.",
   "CREDIT": "ShaderClaw — cell-walker sketch translated to multi-pass ISF",
   "CATEGORIES": ["Generator"],
   "INPUTS": [
@@ -8,10 +8,10 @@
     { "NAME": "stepRate", "LABEL": "Step Rate", "TYPE": "float", "DEFAULT": 40.0, "MIN": 1.0, "MAX": 240.0 },
     { "NAME": "hueDrift", "LABEL": "Hue Drift", "TYPE": "float", "DEFAULT": 0.015, "MIN": 0.0, "MAX": 0.1 },
     { "NAME": "fadeRate", "LABEL": "Trail Fade", "TYPE": "float", "DEFAULT": 0.004, "MIN": 0.0, "MAX": 0.08 },
-    { "NAME": "saturation", "LABEL": "Saturation", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 1.0 },
-    { "NAME": "brightness", "LABEL": "Brightness", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 2.0 },
+    { "NAME": "hdrPeak", "LABEL": "HDR Peak", "TYPE": "float", "DEFAULT": 2.5, "MIN": 1.0, "MAX": 4.0 },
     { "NAME": "bloom", "LABEL": "Bloom", "TYPE": "float", "DEFAULT": 0.35, "MIN": 0.0, "MAX": 1.5 },
     { "NAME": "pulse", "LABEL": "Audio Pulse", "TYPE": "float", "DEFAULT": 0.6, "MIN": 0.0, "MAX": 2.0 },
+    { "NAME": "symmetryFold", "LABEL": "Symmetry", "TYPE": "float", "DEFAULT": 8.0, "MIN": 2.0, "MAX": 16.0 },
     { "NAME": "bounceEdges", "LABEL": "Bounce Edges", "TYPE": "bool", "DEFAULT": true },
     { "NAME": "backgroundColor", "LABEL": "BG Color", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] }
   ],
@@ -59,6 +59,22 @@ vec4 readWalker(float id) {
     return texture2D(stateBuf, vec2((id + 0.5) / 16.0, 0.5));
 }
 
+// Fold UV into one sector of N-fold rotational symmetry
+vec2 mandalaUV(vec2 uv, float folds) {
+    // Center the UV
+    vec2 p = uv * 2.0 - 1.0;
+    // Polar coords
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    // Fold into one sector
+    float sector = TAU / folds;
+    a = mod(a, sector);
+    if (a > sector * 0.5) a = sector - a; // mirror within sector
+    // Back to cartesian, then back to [0,1]
+    p = r * vec2(cos(a), sin(a));
+    return p * 0.5 + 0.5;
+}
+
 void main() {
     vec2 Res = RENDERSIZE;
     vec2 pos = gl_FragCoord.xy;
@@ -76,7 +92,8 @@ void main() {
             return;
         }
 
-        // Seed the walker near center on first frames
+        // Seed the walker in center quadrant on first frames
+        // (their 1/8 sector gets reflected × 8 via mandalaUV)
         if (FRAMEINDEX < 2) {
             float jx = (hash11(id * 7.31 + 1.0) - 0.5) * 0.15;
             float jy = (hash11(id * 3.19 + 2.0) - 0.5) * 0.15;
@@ -120,6 +137,7 @@ void main() {
 
     // =============================================================
     // PASS 1: update persistent canvas (fade + paint walker cells)
+    // Mandala kaleidoscope: fold canvas UV before checking walker
     // =============================================================
     if (PASSINDEX == 1) {
         vec2 uv = pos / Res;
@@ -128,17 +146,23 @@ void main() {
 
         // Aspect-correct grid so cells stay square
         float aspect = Res.x / Res.y;
-        vec2 gridUV = vec2(uv.x * aspect, uv.y);
+
+        // Fold the canvas UV into mandala space (N-fold symmetry)
+        float folds = max(symmetryFold, 2.0);
+        vec2 foldedUV = mandalaUV(uv, folds);
+        vec2 gridUV = vec2(foldedUV.x * aspect, foldedUV.y);
         vec2 pxCell = floor(gridUV * gridSize);
 
         for (int i = 0; i < MAX_WALKERS; i++) {
             if (float(i) >= walkers) break;
             vec4 st = readWalker(float(i));
-            vec2 wGridUV = vec2(st.r * aspect, st.g);
+            // Walker positions are in center quadrant — map to folded space
+            vec2 wGridUV = vec2(st.r * aspect * 0.5 + 0.25, st.g * 0.5 + 0.25);
             vec2 wCell = floor(wGridUV * gridSize);
             vec2 diff = abs(wCell - pxCell);
             if (diff.x < 0.5 && diff.y < 0.5) {
-                vec3 rgb = hsv2rgb(vec3(st.b, saturation, brightness * audio));
+                // saturation hardcoded 1.0, brightness = hdrPeak * audio
+                vec3 rgb = hsv2rgb(vec3(st.b, 1.0, hdrPeak * audio));
                 col = vec4(rgb, 1.0);
             }
         }
