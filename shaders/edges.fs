@@ -1,180 +1,320 @@
 /*{
-    "DESCRIPTION": "Particle field bouncing off the edges of the canvas. Grid-seeded, audio-reactive, velocity-stretched streaks.",
-    "CATEGORIES": ["Generator", "Particles", "Audio Reactive"],
-    "CREDIT": "Easel / edges v1",
+    "DESCRIPTION": "3D Neon Wireframe City — raymarched SDF cityscape at night with glowing neon edge lines",
+    "CREDIT": "ShaderClaw auto-improve 2026-05-09",
+    "ISFVSN": "2",
+    "CATEGORIES": ["Generator", "3D", "Audio Reactive"],
     "INPUTS": [
-        { "NAME": "motionSpeed",    "TYPE": "float", "DEFAULT": 0.3, "MIN": 0.0, "MAX": 1.0, "LABEL": "Motion Speed" },
-        { "NAME": "chaos",          "TYPE": "float", "DEFAULT": 0.6, "MIN": 0.0, "MAX": 2.0, "LABEL": "Chaos" },
-        { "NAME": "particleSize",   "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 4.0, "LABEL": "Particle Size" },
-        { "NAME": "stretch",        "TYPE": "float", "DEFAULT": 1.2, "MIN": 0.0, "MAX": 4.0, "LABEL": "Stretch" },
-        { "NAME": "vortexStrength", "TYPE": "float", "DEFAULT": 0.8, "MIN": 0.0, "MAX": 3.0, "LABEL": "Vortex" },
-        { "NAME": "audioReactivity","TYPE": "float", "DEFAULT": 0.7, "MIN": 0.0, "MAX": 2.0, "LABEL": "Audio" },
-        { "NAME": "color1", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0], "LABEL": "Core" },
-        { "NAME": "color2", "TYPE": "color", "DEFAULT": [0.1, 0.7, 1.0, 1.0], "LABEL": "Halo" },
-        { "NAME": "bg",     "TYPE": "color", "DEFAULT": [0.02, 0.02, 0.03, 1.0], "LABEL": "Background" },
-        { "NAME": "glow",   "TYPE": "float", "DEFAULT": 1.3, "MIN": 0.0, "MAX": 3.0, "LABEL": "Glow" },
-        { "NAME": "ledMode",       "TYPE": "bool",  "DEFAULT": true,  "LABEL": "LED Wall" },
-        { "NAME": "ledSize",       "TYPE": "float", "DEFAULT": 220.0, "MIN": 50.0, "MAX": 600.0, "LABEL": "LED Density" },
-        { "NAME": "trailDecay",    "TYPE": "float", "DEFAULT": 0.85,  "MIN": 0.0,  "MAX": 1.0, "LABEL": "Trail Length" },
-        { "NAME": "particleCount", "TYPE": "float", "DEFAULT": 96.0,  "MIN": 20.0, "MAX": 200.0, "LABEL": "Particle Count" },
-        { "NAME": "colorJitter",   "TYPE": "float", "DEFAULT": 0.40,  "MIN": 0.0,  "MAX": 1.0, "LABEL": "Color Jitter" }
+        {
+            "NAME": "buildingDensity",
+            "TYPE": "float",
+            "DEFAULT": 0.55,
+            "MIN": 0.1,
+            "MAX": 1.0,
+            "LABEL": "Building Density"
+        },
+        {
+            "NAME": "buildingHeight",
+            "TYPE": "float",
+            "DEFAULT": 1.2,
+            "MIN": 0.3,
+            "MAX": 3.0,
+            "LABEL": "Building Height"
+        },
+        {
+            "NAME": "cityRadius",
+            "TYPE": "float",
+            "DEFAULT": 3.5,
+            "MIN": 1.0,
+            "MAX": 8.0,
+            "LABEL": "City Radius"
+        },
+        {
+            "NAME": "edgeGlow",
+            "TYPE": "float",
+            "DEFAULT": 2.5,
+            "MIN": 1.0,
+            "MAX": 4.0,
+            "LABEL": "Edge HDR Brightness"
+        },
+        {
+            "NAME": "orbitSpeed",
+            "TYPE": "float",
+            "DEFAULT": 0.07,
+            "MIN": 0.0,
+            "MAX": 1.0,
+            "LABEL": "Camera Orbit"
+        },
+        {
+            "NAME": "audioReact",
+            "TYPE": "float",
+            "DEFAULT": 0.8,
+            "MIN": 0.0,
+            "MAX": 2.0,
+            "LABEL": "Audio Reactivity"
+        }
     ]
 }*/
 
-float hash11(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+// ---- Constants ----
+#define MAX_STEPS 64
+#define MAX_DIST  25.0
+#define SURF_DIST 0.004
+#define PI        3.14159265358979323846
+#define TAU       6.28318530717958647692
 
-// Triangle-wave bounce: x (time-like) folded into [0,1] with reflection.
-float bounce01(float x) { return abs(fract(x * 0.5) * 2.0 - 1.0); }
-
-// 2D sinusoidal "vortex" — cheap analytic flow field, no noise tables.
-vec2 vortex(vec2 p, float t) {
-    float a = sin(p.x * 1.3 + t * 0.7) + cos(p.y * 1.7 - t * 0.5);
-    float b = cos(p.x * 1.9 - t * 0.4) + sin(p.y * 1.1 + t * 0.9);
-    return vec2(a, b) * 0.5;
+// ---- Hash utilities ----
+float hash11(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
+float hash21(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
-void main() {
-    vec2 uv = isf_FragNormCoord * 2.0 - 1.0;
-    float aspect = RENDERSIZE.x / RENDERSIZE.y;
-    uv.x *= aspect;
+// ---- SDF primitives ----
+float sdBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
 
-    float t = TIME;
-    float audio = audioLevel + audioBass * 1.1 + audioHigh * 0.5;
+float sdPlane(vec3 p, float y) {
+    return p.y - y;
+}
 
-    vec3 acc = vec3(0.0);
-    const int N = 256;
+// ---- Edge proximity for a box ----
+// Returns how far from the nearest edge line (small = at an edge)
+float boxEdgeProximity(vec3 p, vec3 b) {
+    vec3 q = abs(p);
+    vec3 d = b - q;
+    // Near an edge means two dimensions are near the face boundary simultaneously
+    float d0 = d.x, d1 = d.y, d2 = d.z;
+    // Sort to find two smallest
+    if (d0 < d1) { float tmp = d0; d0 = d1; d1 = tmp; }
+    if (d1 < d2) { float tmp = d1; d1 = d2; d2 = tmp; }
+    if (d0 < d1) { float tmp = d0; d0 = d1; d1 = tmp; }
+    // d1, d2 are the two smallest — both near 0 = near edge
+    return max(d1, d2);
+}
 
-    for (int i = 0; i < N; i++) {
-        float fi = float(i);
-        float s1 = hash11(fi * 1.37);
-        float s2 = hash11(fi * 2.91 + 0.5);
-        float s3 = hash11(fi * 4.17 + 0.3);
-        float s4 = hash11(fi * 7.53 + 0.7);
+// ---- Scene result packed as vec3(dist, mat, hash) ----
+// mat: 1.0=building, 2.0=ground
+vec3 mapCity(vec3 p, float t) {
+    float audioHScale = 1.0 + audioBass * 1.0 * audioReact;  // K=1.0
 
-        // Wider speed range + two stacked oscillators per axis → richer, less
-        // periodic-feeling motion. Each particle has a dominant and secondary
-        // frequency at 1.7× offset, mixed 70/30.
-        float speedX1 = (0.2 + s1 * 2.8) * motionSpeed;
-        float speedY1 = (0.2 + s2 * 2.8) * motionSpeed;
-        float speedX2 = speedX1 * (1.0 + s3 * 0.8);
-        float speedY2 = speedY1 * (1.0 + s4 * 0.8);
-        float phaseX  = s3 * 6.2832;
-        float phaseY  = s4 * 6.2832;
-        float phaseX2 = s1 * 3.1416;
-        float phaseY2 = s2 * 3.1416;
+    float bestDist = MAX_DIST;
+    float bestMat = 0.0;
+    float bestHash = 0.0;
 
-        float dt = 0.02;
-        // Mix two bouncing oscillators so paths don't feel clockwork-regular.
-        float bxA = bounce01(t      * speedX1 + phaseX) * 0.7
-                  + bounce01(t      * speedX2 + phaseX2) * 0.3;
-        float byA = bounce01(t      * speedY1 + phaseY) * 0.7
-                  + bounce01(t      * speedY2 + phaseY2) * 0.3;
-        float bxB = bounce01((t+dt) * speedX1 + phaseX) * 0.7
-                  + bounce01((t+dt) * speedX2 + phaseX2) * 0.3;
-        float byB = bounce01((t+dt) * speedY1 + phaseY) * 0.7
-                  + bounce01((t+dt) * speedY2 + phaseY2) * 0.3;
+    float spacing = 1.4;
+    vec2 cellXZ = floor(p.xz / spacing);
 
-        vec2 baseA = vec2(bxA, byA) * 2.0 - 1.0;
-        vec2 baseB = vec2(bxB, byB) * 2.0 - 1.0;
+    // Check 3x3 neighborhood for correct SDF continuity
+    for (int ci = -1; ci <= 1; ci++) {
+        for (int cj = -1; cj <= 1; cj++) {
+            vec2 cell = cellXZ + vec2(float(ci), float(cj));
 
-        // Chaos: stacked sin layers at different frequencies + a per-particle
-        // tumble. With chaos > 0 each particle deviates strongly from its
-        // base bounce path, with chaos = 0 it follows the orbit cleanly.
-        // Previous version was scaled by 0.25 — far too weak to read.
-        float chT = t * 0.7;
-        float chTb = (t+dt) * 0.7;
-        // Three octaves of sin per axis at different frequencies + per-
-        // particle phase offsets — non-periodic-feeling drift
-        vec2 chaosA = vec2(
-            sin(chT  * (1.1 + s1 * 1.3) + s3 * 6.28) * 0.55
-          + sin(chT  * (3.7 + s2 * 1.7) + s4 * 6.28) * 0.30
-          + sin(chT  * (0.4 + s3 * 0.9) + s1 * 6.28) * 0.20,
-            cos(chT  * (0.9 + s2 * 1.5) + s4 * 6.28) * 0.55
-          + cos(chT  * (3.1 + s1 * 1.4) + s3 * 6.28) * 0.30
-          + cos(chT  * (0.6 + s4 * 1.1) + s2 * 6.28) * 0.20
-        ) * chaos * 0.55;
-        vec2 chaosB = vec2(
-            sin(chTb * (1.1 + s1 * 1.3) + s3 * 6.28) * 0.55
-          + sin(chTb * (3.7 + s2 * 1.7) + s4 * 6.28) * 0.30
-          + sin(chTb * (0.4 + s3 * 0.9) + s1 * 6.28) * 0.20,
-            cos(chTb * (0.9 + s2 * 1.5) + s4 * 6.28) * 0.55
-          + cos(chTb * (3.1 + s1 * 1.4) + s3 * 6.28) * 0.30
-          + cos(chTb * (0.6 + s4 * 1.1) + s2 * 6.28) * 0.20
-        ) * chaos * 0.55;
-        baseA += chaosA;
-        baseB += chaosB;
-        // Wrap (not clamp) so chaotic particles re-enter rather than stick to edges
-        baseA = mod(baseA + 1.0, 2.0) - 1.0;
-        baseB = mod(baseB + 1.0, 2.0) - 1.0;
+            float h1 = hash21(cell);
+            float h2 = hash21(cell + vec2(3.7, 11.3));
+            float h3 = hash21(cell + vec2(17.1, 5.9));
 
-        // Aspect-stretched world-space positions.
-        vec2 posA = vec2(baseA.x * aspect, baseA.y);
-        vec2 posB = vec2(baseB.x * aspect, baseB.y);
+            // Density check
+            if (h1 > buildingDensity) continue;
 
-        // Optional vortex perturbation.
-        posA += vortex(posA, t)          * vortexStrength * 0.08;
-        posB += vortex(posB, t + dt)     * vortexStrength * 0.08;
+            // City radius clip
+            if (length(cell * spacing) > cityRadius) continue;
 
-        vec2 vel = (posB - posA) / dt;
-        float speed = length(vel);
+            float bw = 0.22 + h2 * 0.18;
+            float bh = (0.3 + h3 * buildingHeight) * audioHScale;
+            float bd = 0.22 + h1 * 0.18;
 
-        // Capsule endpoints for motion-stretched particle.
-        float stretchLen = 0.006 * stretch * (0.5 + audio * audioReactivity);
-        vec2 a = posA - vel * stretchLen;
-        vec2 b = posA + vel * stretchLen;
+            vec3 bCenter = vec3((cell.x + 0.5) * spacing, bh * 0.5, (cell.y + 0.5) * spacing);
+            vec3 pRel = p - bCenter;
+            float d = sdBox(pRel, vec3(bw, bh * 0.5, bd));
 
-        // Distance to capsule (line segment with rounded caps).
-        vec2 pa = uv - a;
-        vec2 ba = b - a;
-        float denom = max(dot(ba, ba), 1e-6);
-        float h = clamp(dot(pa, ba) / denom, 0.0, 1.0);
-        float d = length(pa - ba * h);
-
-        float r = 0.012 * particleSize * (0.6 + audio * audioReactivity * 0.6);
-        float core = smoothstep(r, 0.0, d);
-        float halo = exp(-d * 70.0);
-
-        // Per-particle color jitter — gives the LED-wall variety look
-        vec3 c1 = color1.rgb;
-        vec3 c2 = color2.rgb;
-        if (colorJitter > 0.0) {
-            float h = hash11(float(i) * 11.7);
-            vec3 hueShift = 0.5 + 0.5 * cos(6.28318 * h + vec3(0.0, 2.094, 4.188));
-            c1 = mix(c1, hueShift,             colorJitter);
-            c2 = mix(c2, hueShift * 0.7 + 0.3, colorJitter);
-        }
-        acc += mix(c2, c1, core) * (core + halo * 0.35);
-
-        // Trail — extra ghost samples behind the segment
-        if (trailDecay > 0.001) {
-            for (int tk = 1; tk <= 3; tk++) {
-                float ftk = float(tk);
-                vec2 ghostA = a - vel * ftk * 0.10 * trailDecay;
-                vec2 ghostB = a;
-                vec2 paG = uv - ghostA;
-                vec2 baG = ghostB - ghostA;
-                float dG2 = dot(baG, baG);
-                if (dG2 > 1e-6) {
-                    float hG = clamp(dot(paG, baG) / dG2, 0.0, 1.0);
-                    float ddG = length(paG - baG * hG);
-                    float fadeG = 1.0 - ftk / 4.0;
-                    acc += mix(c2, c1, smoothstep(r, 0.0, ddG)) * fadeG * 0.20;
-                }
+            if (d < bestDist) {
+                bestDist = d;
+                bestMat = 1.0;
+                bestHash = h1;
             }
         }
     }
 
-    vec3 rgb = bg.rgb + acc * glow;
-
-    // LED wall mode: quantize to a grid, leaving black "gaps" between LEDs
-    if (ledMode) {
-        vec2 ledUV = uv * ledSize;
-        vec2 lf = fract(ledUV) - 0.5;
-        float dotMask = smoothstep(0.45, 0.30, length(lf));
-        // Black bezel between LEDs, brightness boost on the lit dot
-        rgb = rgb * (0.20 + 0.80 * dotMask);
-        rgb += rgb * dotMask * 0.4;  // a touch of bloom on lit cells
+    // Ground plane
+    float gd = sdPlane(p, 0.0);
+    if (gd < bestDist) {
+        bestDist = gd;
+        bestMat = 2.0;
+        bestHash = 0.0;
     }
 
-    gl_FragColor = vec4(rgb, 1.0);
+    return vec3(bestDist, bestMat, bestHash);
+}
+
+float mapDist(vec3 p, float t) {
+    return mapCity(p, t).x;
+}
+
+// ---- Normal estimation ----
+vec3 calcNormal(vec3 p, float t) {
+    float eps = 0.002;
+    vec2 e = vec2(eps, 0.0);
+    return normalize(vec3(
+        mapDist(p + e.xyy, t) - mapDist(p - e.xyy, t),
+        mapDist(p + e.yxy, t) - mapDist(p - e.yxy, t),
+        mapDist(p + e.yyx, t) - mapDist(p - e.yyx, t)
+    ));
+}
+
+// ---- Palette: void black, cyan 3.0, magenta 2.0, yellow 2.5, white 3.0 ----
+vec3 edgeColor(float cellHash, float t) {
+    float idx = floor(fract(cellHash * 7.391) * 4.0);
+    vec3 col;
+    if (idx < 1.0)      col = vec3(0.0, 1.0, 1.0) * 3.0;   // neon cyan 3.0
+    else if (idx < 2.0) col = vec3(1.0, 0.0, 0.9) * 2.0;   // neon magenta 2.0
+    else if (idx < 3.0) col = vec3(1.0, 0.9, 0.0) * 2.5;   // electric yellow 2.5
+    else                col = vec3(1.0, 1.0, 1.0) * 3.0;   // hot white spec 3.0
+    return col;
+}
+
+// ---- Ground grid ----
+vec3 groundGridColor(vec3 p) {
+    vec2 gUV = p.xz / 1.4;
+    vec2 gFrac = fract(gUV);
+    float lineX = min(gFrac.x, 1.0 - gFrac.x);
+    float lineZ = min(gFrac.y, 1.0 - gFrac.y);
+    float fw = fwidth(min(lineX, lineZ));
+    float gridLine = 1.0 - smoothstep(0.0, fw * 3.0 + 0.01, min(lineX, lineZ));
+    float gridBright = 0.4 * (1.0 + audioMid * 1.0 * audioReact);
+    return vec3(0.0, 0.5, 1.0) * gridBright * gridLine;
+}
+
+// ---- Main ----
+void main() {
+    vec2 uv = isf_FragNormCoord.xy * 2.0 - 1.0;
+    float aspect = RENDERSIZE.x / max(RENDERSIZE.y, 1.0);
+    uv.x *= aspect;
+
+    float t = TIME;
+
+    // Camera orbits overhead looking down at city
+    float orbitAngle = t * orbitSpeed;
+    float camHeight = 4.5;
+    float camDist = cityRadius * 0.85;
+
+    vec3 camPos = vec3(
+        cos(orbitAngle) * camDist,
+        camHeight,
+        sin(orbitAngle) * camDist
+    );
+
+    vec3 target = vec3(0.0, 0.5, 0.0);
+    vec3 forward = normalize(target - camPos);
+    vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+    vec3 up = cross(right, forward);
+
+    vec3 rd = normalize(forward + uv.x * right * 0.6 + uv.y * up * 0.6);
+    vec3 ro = camPos;
+
+    // Raymarching
+    float dist = 0.0;
+    bool hit = false;
+    float hitMat = 0.0;
+    vec3 hitPos = ro;
+    float hitHash = 0.0;
+
+    for (int i = 0; i < MAX_STEPS; i++) {
+        vec3 p = ro + rd * dist;
+        vec3 res = mapCity(p, t);
+        float d = res.x;
+
+        if (d < SURF_DIST) {
+            hit = true;
+            hitMat = res.y;
+            hitPos = p;
+            hitHash = res.z;
+            break;
+        }
+
+        dist += max(d * 0.85, SURF_DIST * 2.0);
+        if (dist > MAX_DIST) break;
+    }
+
+    vec3 finalColor = vec3(0.0);  // void black
+
+    if (hit) {
+        vec3 nor = calcNormal(hitPos, t);
+
+        if (hitMat > 1.5) {
+            // Ground plane — grid lines only
+            finalColor = groundGridColor(hitPos);
+            float cityGlow = exp(-length(hitPos.xz) * 0.15) * 0.08;
+            finalColor += vec3(0.0, 0.3, 0.5) * cityGlow;
+
+        } else {
+            // Building — edge proximity for fwidth-based glow
+            float spacing = 1.4;
+            vec2 cellXZ2 = floor(hitPos.xz / spacing);
+            float bestEdge = 999.0;
+
+            for (int ci = -1; ci <= 1; ci++) {
+                for (int cj = -1; cj <= 1; cj++) {
+                    vec2 cell = cellXZ2 + vec2(float(ci), float(cj));
+                    float h1 = hash21(cell);
+                    // Match the hit building by hash
+                    if (abs(h1 - hitHash) > 0.001) continue;
+                    float h2 = hash21(cell + vec2(3.7, 11.3));
+                    float h3 = hash21(cell + vec2(17.1, 5.9));
+                    float audioHScale2 = 1.0 + audioBass * 1.0 * audioReact;
+                    float bw = 0.22 + h2 * 0.18;
+                    float bh = (0.3 + h3 * buildingHeight) * audioHScale2;
+                    float bd = 0.22 + h1 * 0.18;
+                    vec3 bCenter = vec3((cell.x + 0.5) * spacing, bh * 0.5, (cell.y + 0.5) * spacing);
+                    vec3 pRel = hitPos - bCenter;
+                    float ep = boxEdgeProximity(pRel, vec3(bw, bh * 0.5, bd));
+                    if (ep < bestEdge) bestEdge = ep;
+                }
+            }
+
+            // fwidth-based edge glow — anti-aliased neon lines
+            float edgeWidth = fwidth(bestEdge);
+            float edgeMask = 1.0 - smoothstep(0.0, edgeWidth * 5.0 + 0.025, bestEdge);
+
+            // Rim lighting adds edge emphasis at silhouette
+            float rim = pow(max(0.0, 1.0 - abs(dot(nor, -rd))), 2.5);
+            float edgeFactor = max(edgeMask, rim * 0.5);
+
+            // Audio modulates edge glow brightness (K=1.0)
+            float glowBright = edgeGlow * (1.0 + audioHigh * 1.0 * audioReact);
+
+            vec3 eCol = edgeColor(hitHash, t);
+            finalColor = eCol * edgeFactor * glowBright;
+
+            // Faint interior — nearly void
+            finalColor += eCol * 0.03 * (1.0 - edgeFactor);
+        }
+    }
+
+    // Volumetric halo pass — soft atmospheric glow around edges
+    {
+        vec3 haloCol = vec3(0.0);
+        float hStep = MAX_DIST / 24.0;
+        float hDist = 0.5;
+
+        for (int hi = 0; hi < 24; hi++) {
+            vec3 hp = ro + rd * hDist;
+            vec3 hr = mapCity(hp, t);
+            if (hr.y > 0.5 && hr.y < 1.5) {
+                float proximity = exp(-abs(hr.x) * 18.0);
+                vec3 hc = edgeColor(hr.z, t);
+                float ab = 1.0 + audioMid * 0.8 * audioReact;
+                haloCol += hc * proximity * 0.04 * ab;
+            }
+            hDist += hStep;
+            if (hDist > MAX_DIST) break;
+        }
+
+        finalColor += clamp(haloCol, 0.0, 3.0);
+    }
+
+    // Output linear HDR — no tonemapping, no ACES, no clamp
+    gl_FragColor = vec4(finalColor, 1.0);
 }
