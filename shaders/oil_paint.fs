@@ -1,124 +1,219 @@
 /*{
-  "DESCRIPTION": "Oil paint effect — Kuwahara filter with relief lighting for painterly brush strokes",
-  "CREDIT": "ShaderClaw (Kuwahara approach inspired by flockaroo)",
-  "CATEGORIES": ["Effect"],
+  "DESCRIPTION": "2D Abstract Expressionist painting — de Kooning / Kline style gestural brush strokes, cool cobalt/black/titanium palette",
+  "CREDIT": "ShaderClaw auto-improve 2026-05-09",
+  "ISFVSN": "2",
+  "CATEGORIES": ["Generator", "Audio Reactive"],
   "INPUTS": [
-    { "NAME": "inputImage", "LABEL": "Texture", "TYPE": "image" },
-    { "NAME": "brushRadius", "LABEL": "Brush Size", "TYPE": "float", "DEFAULT": 4.0, "MIN": 1.0, "MAX": 12.0 },
-    { "NAME": "paintSpec", "LABEL": "Specular", "TYPE": "float", "DEFAULT": 0.15, "MIN": 0.0, "MAX": 1.0 },
-    { "NAME": "vignetteAmt", "LABEL": "Vignette", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 3.0 },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": 0.0 }
+    { "NAME": "brushSize",   "LABEL": "Brush Size",   "TYPE": "float", "DEFAULT": 4.0, "MIN": 1.0, "MAX": 12.0 },
+    { "NAME": "impasto",     "LABEL": "Impasto",      "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 2.0 },
+    { "NAME": "paintSpec",   "LABEL": "Specular",     "TYPE": "float", "DEFAULT": 0.9, "MIN": 0.0, "MAX": 2.0 },
+    { "NAME": "swirlSpeed",  "LABEL": "Swirl Speed",  "TYPE": "float", "DEFAULT": 0.18,"MIN": 0.0, "MAX": 1.0 },
+    { "NAME": "coolWarm",    "LABEL": "Cool/Warm",    "TYPE": "float", "DEFAULT": 0.3, "MIN": 0.0, "MAX": 1.0 },
+    { "NAME": "audioReact",  "LABEL": "Audio React",  "TYPE": "float", "DEFAULT": 0.6, "MIN": 0.0, "MAX": 2.0 },
+    { "NAME": "vignetteAmt", "LABEL": "Vignette",     "TYPE": "float", "DEFAULT": 0.8, "MIN": 0.0, "MAX": 3.0 },
+    { "NAME": "inputTex",    "LABEL": "Texture",      "TYPE": "image" }
   ],
   "PASSES": [
-    { "TARGET": "paintBuf", "PERSISTENT": true },
+    { "TARGET": "paintBuf", "PERSISTENT": false },
     {}
   ]
 }*/
 
-#define PI 3.1415927
+#define PI 3.14159265358979323846
+#define TAU 6.28318530717958647692
 
-// Aspect-correct UV
-vec2 fitUV(vec2 pos) {
-    return (pos - 0.5 * RENDERSIZE) * min(IMG_SIZE_inputImage.y / RENDERSIZE.y, IMG_SIZE_inputImage.x / RENDERSIZE.x) / IMG_SIZE_inputImage + 0.5;
+// ---- Noise / hash ----
+float hash11(float n) { return fract(sin(n) * 43758.5453123); }
+float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+
+// Value noise
+float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Kuwahara filter: find the quadrant with lowest variance and use its mean color
-// This creates the flat-color brush stroke look of oil paintings
-vec3 kuwahara(vec2 uv, float radius) {
-    vec2 texel = 1.0 / RENDERSIZE;
-
-    vec3 mean[4];
-    vec3 var_acc[4];
-    float count[4];
-
-    // Initialize accumulators
+// FBM — 4 octaves, directional bias for gestural strokes
+float fbm(vec2 p, float angle) {
+    float c = cos(angle), s = sin(angle);
+    mat2 rot = mat2(c, -s, s, c);
+    float v = 0.0, amp = 0.5, freq = 1.0;
     for (int i = 0; i < 4; i++) {
-        mean[i] = vec3(0.0);
-        var_acc[i] = vec3(0.0);
-        count[i] = 0.0;
+        v += amp * vnoise(p * freq);
+        p = rot * p + vec2(0.31, 0.17);
+        freq *= 2.1;
+        amp *= 0.5;
+    }
+    return v;
+}
+
+// Domain-warped FBM for gestural brush strokes
+float gestural(vec2 uv, float t, float audioEnergy) {
+    // Two levels of domain warp to simulate brush pressure and direction
+    float brushAngle = PI * 0.15;  // dominant stroke direction (slight diagonal, like de Kooning)
+    float audioBoost = 1.0 + audioEnergy * 1.2 * audioReact;  // K=1.2
+
+    // First warp: large-scale stroke layout
+    float warpScale = brushSize * 0.5;
+    vec2 q = vec2(
+        fbm(uv * warpScale + vec2(0.0, 0.0), brushAngle),
+        fbm(uv * warpScale + vec2(5.2, 1.3), brushAngle + PI * 0.5)
+    );
+
+    // Second warp: finer stroke texture
+    float innerScale = brushSize * 1.2;
+    vec2 r = vec2(
+        fbm(uv * innerScale + 4.0 * q + vec2(1.7, 9.2) + t * swirlSpeed, brushAngle + 0.3),
+        fbm(uv * innerScale + 4.0 * q + vec2(8.3, 2.8) + t * swirlSpeed * 0.7, brushAngle - 0.3)
+    );
+
+    return fbm(uv * brushSize * 0.8 + 4.0 * r * audioBoost, brushAngle);
+}
+
+// ---- Palette: carbon black, cobalt blue, titanium white, slate gray ----
+// coolWarm=0: cool cobalt/black, coolWarm=1: warm umber/sienna
+vec3 procPigment(float v, float t, float audioEnergy) {
+    // Clamp value to [0,1]
+    v = clamp(v, 0.0, 1.0);
+
+    // Cool palette base
+    vec3 black  = vec3(0.02, 0.02, 0.03);          // carbon black
+    vec3 cobalt = vec3(0.08, 0.25, 0.85) * 1.2;    // cobalt blue 1.2 (HDR)
+    vec3 slate  = vec3(0.25, 0.30, 0.40) * 0.8;    // slate gray 0.8
+    vec3 white  = vec3(1.0, 1.05, 1.1) * 2.5;      // titanium white 2.5
+
+    // Warm palette for coolWarm>0
+    vec3 umber  = vec3(0.55, 0.28, 0.08) * 1.0;    // raw umber
+    vec3 sienna = vec3(0.8, 0.35, 0.12) * 1.2;     // burnt sienna
+    vec3 warmWh = vec3(1.1, 1.05, 0.95) * 2.5;     // warm white
+
+    // 4 stops for cool: black → cobalt → slate → titanium white
+    vec3 coolCol;
+    if (v < 0.25) {
+        coolCol = mix(black, cobalt, v / 0.25);
+    } else if (v < 0.55) {
+        coolCol = mix(cobalt, slate, (v - 0.25) / 0.30);
+    } else if (v < 0.80) {
+        coolCol = mix(slate, white * 0.6, (v - 0.55) / 0.25);
+    } else {
+        // Ridge peaks: titanium white 2.5 → 3.0 on spikes
+        float ridgeFactor = (v - 0.80) / 0.20;
+        coolCol = mix(white * 0.6, white * (1.0 + ridgeFactor * 0.4), ridgeFactor);
     }
 
-    // Sample the 4 quadrants around the pixel
-    for (int j = -6; j <= 6; j++) {
-        for (int i = -6; i <= 6; i++) {
-            if (abs(float(i)) > radius || abs(float(j)) > radius) continue;
-
-            vec3 c = texture2D(inputImage, fitUV((uv * RENDERSIZE) + vec2(float(i), float(j)))).rgb;
-
-            // Determine which quadrant(s) this sample belongs to
-            // Quadrant 0: top-right, 1: top-left, 2: bottom-left, 3: bottom-right
-            // Use loop to assign to correct quadrant (WebGL requires const/loop index)
-            int qi = (i >= 0) ? 0 : 1;
-            int qj = (j >= 0) ? 0 : 2;
-            int q = qi + qj;
-
-            for (int k = 0; k < 4; k++) {
-                if (k == q) {
-                    mean[k] += c;
-                    var_acc[k] += c * c;
-                    count[k] += 1.0;
-                }
-            }
-        }
+    // 4 stops for warm: black → umber → sienna → warm white
+    vec3 warmCol;
+    if (v < 0.25) {
+        warmCol = mix(black, umber, v / 0.25);
+    } else if (v < 0.55) {
+        warmCol = mix(umber, sienna, (v - 0.25) / 0.30);
+    } else if (v < 0.80) {
+        warmCol = mix(sienna, warmWh * 0.6, (v - 0.55) / 0.25);
+    } else {
+        float ridgeFactor = (v - 0.80) / 0.20;
+        warmCol = mix(warmWh * 0.6, warmWh * (1.0 + ridgeFactor * 0.4), ridgeFactor);
     }
 
-    // Find the quadrant with minimum variance
-    float minVar = 1e8;
-    vec3 result = vec3(0.0);
-
-    for (int q = 0; q < 4; q++) {
-        if (count[q] < 1.0) continue;
-        vec3 m = mean[q] / count[q];
-        vec3 v = var_acc[q] / count[q] - m * m;
-        float totalVar = v.r + v.g + v.b;
-        if (totalVar < minVar) {
-            minVar = totalVar;
-            result = m;
-        }
-    }
-
-    return result;
+    // Blend cool/warm by parameter
+    return mix(coolCol, warmCol, coolWarm);
 }
 
 void main() {
     vec2 pos = gl_FragCoord.xy;
     vec2 uv = pos / RENDERSIZE;
 
-    // ==== PASS 0: Kuwahara paint filter ====
+    // ==== PASS 0: Gestural painting generation ====
     if (PASSINDEX == 0) {
-        gl_FragColor = vec4(kuwahara(uv, brushRadius), 1.0);
+        float t = TIME;
+
+        // Audio energy — drives brush stroke intensity
+        float audioEnergy = audioBass * 0.6 + audioMid * 0.3 + audioHigh * 0.1;
+
+        // Scale UV to preserve aspect-correct stroke proportions
+        float aspect = RENDERSIZE.x / max(RENDERSIZE.y, 1.0);
+        vec2 sUV = vec2(uv.x * aspect, uv.y);
+
+        // Multiple overlapping stroke fields — de Kooning layered approach
+        float stroke1 = gestural(sUV * 0.8, t, audioEnergy);
+        float stroke2 = gestural(sUV * 1.3 + vec2(3.1, 7.4), t * 1.1, audioEnergy * 0.7);
+        float stroke3 = gestural(sUV * 0.5 + vec2(1.9, 4.2), t * 0.8, audioEnergy * 0.5);
+
+        // Combine strokes: dominant stroke1 with accent interference
+        float combined = stroke1 * 0.60 + stroke2 * 0.25 + stroke3 * 0.15;
+
+        // Add sharp ridge discontinuities (palette knife scrapes)
+        float ridge = abs(fract(combined * 3.0 + t * swirlSpeed * 0.1) - 0.5) * 2.0;
+        float ridgeMask = smoothstep(0.7, 1.0, ridge) * impasto * 0.4;
+        combined = combined + ridgeMask * 0.2;
+
+        // Normalize to [0,1] range
+        combined = clamp(combined, 0.0, 1.0);
+
+        // Apply pigment palette
+        vec3 paintColor = procPigment(combined, t, audioEnergy);
+
+        // Optional: if inputTex is bound, use as base layer (Kuwahara-style blend)
+        // We check if the texture has content by sampling center
+        // (ISF provides inputTex if bound, otherwise it's black)
+        vec4 texSample = IMG_NORM_PIXEL(inputTex, uv);
+        float texPresent = step(0.01, dot(texSample.rgb, vec3(0.333)));
+        if (texPresent > 0.5) {
+            // Blend texture with painting at 30% texture / 70% painting
+            paintColor = mix(paintColor, texSample.rgb * paintColor, 0.3);
+        }
+
+        gl_FragColor = vec4(paintColor, 1.0);
         return;
     }
 
-    // ==== PASS 1: Relief lighting ====
+    // ==== PASS 1: Impasto relief lighting + specular + vignette ====
     vec2 texel = 1.0 / RENDERSIZE;
-    float valC = dot(texture2D(paintBuf, uv).rgb, vec3(0.333));
-    float valR = dot(texture2D(paintBuf, uv + vec2(texel.x, 0.0)).rgb, vec3(0.333));
-    float valL = dot(texture2D(paintBuf, uv - vec2(texel.x, 0.0)).rgb, vec3(0.333));
-    float valU = dot(texture2D(paintBuf, uv + vec2(0.0, texel.y)).rgb, vec3(0.333));
-    float valD = dot(texture2D(paintBuf, uv - vec2(0.0, texel.y)).rgb, vec3(0.333));
 
+    // Sample luminance neighborhood for surface normal estimation
+    float valC = dot(texture2D(paintBuf, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
+    float valR = dot(texture2D(paintBuf, uv + vec2( texel.x,      0.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    float valL = dot(texture2D(paintBuf, uv - vec2( texel.x,      0.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    float valU = dot(texture2D(paintBuf, uv + vec2(     0.0, texel.y)).rgb, vec3(0.2126, 0.7152, 0.0722));
+    float valD = dot(texture2D(paintBuf, uv - vec2(     0.0, texel.y)).rgb, vec3(0.2126, 0.7152, 0.0722));
+
+    // Impasto controls relief depth
+    float reliefDepth = 80.0 + impasto * 120.0;
     vec3 norm = normalize(vec3(
-        (valR - valL) / texel.x,
-        (valU - valD) / texel.y,
-        150.0
+        (valR - valL) / texel.x * impasto,
+        (valU - valD) / texel.y * impasto,
+        reliefDepth
     ));
 
-    vec3 light = normalize(vec3(-1.0, 1.0, 1.4));
-    float diff = clamp(dot(norm, light), 0.0, 1.0);
-    float spec = pow(clamp(dot(reflect(light, norm), vec3(0.0, 0.0, -1.0)), 0.0, 1.0), 12.0) * paintSpec;
+    // Raking light from upper-left (classic studio lighting for impasto)
+    vec3 light = normalize(vec3(-0.8, 1.2, 1.4));
+    float diff = clamp(dot(norm, light) * 0.5 + 0.5, 0.0, 1.0);
 
-    gl_FragColor = texture2D(paintBuf, uv) * mix(diff, 1.0, 0.9)
-                 + spec * vec4(0.85, 1.0, 1.15, 1.0);
+    // Specular — titanium white paint has high gloss on ridges
+    vec3 viewDir = vec3(0.0, 0.0, 1.0);
+    vec3 halfVec = normalize(light + viewDir);
+    float spec = pow(max(0.0, dot(norm, halfVec)), 32.0) * paintSpec;
 
-    // Vignette
+    // Apply diffuse to paint color
+    vec4 paintCol = texture2D(paintBuf, uv);
+    vec3 lit = paintCol.rgb * mix(diff, 1.0, 0.6);
+
+    // Specular highlight — warm gloss on titanium white peaks
+    lit += spec * vec3(1.0, 1.02, 1.05) * 1.5;
+
+    // Vignette — darkens edges to focus on canvas center
     if (vignetteAmt > 0.0) {
         vec2 scc = (pos - 0.5 * RENDERSIZE) / RENDERSIZE.x;
         float vign = 1.1 - vignetteAmt * dot(scc, scc);
-        vign *= 1.0 - 0.7 * vignetteAmt * exp(-sin(pos.x / RENDERSIZE.x * PI) * 40.0);
-        vign *= 1.0 - 0.7 * vignetteAmt * exp(-sin(pos.y / RENDERSIZE.y * PI) * 20.0);
-        gl_FragColor.xyz *= vign;
+        vign *= 1.0 - 0.7 * vignetteAmt * exp(-sin(uv.x * PI) * 40.0);
+        vign *= 1.0 - 0.7 * vignetteAmt * exp(-sin(uv.y * PI) * 20.0);
+        lit *= max(vign, 0.0);
     }
 
-    gl_FragColor.w = 1.0;
+    // Output linear HDR — no tonemapping, no ACES, no clamp
+    gl_FragColor = vec4(lit, 1.0);
 }
