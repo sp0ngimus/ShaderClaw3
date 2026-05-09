@@ -1,6 +1,6 @@
 /*{
   "CATEGORIES": ["Generator", "Text"],
-  "DESCRIPTION": "Cascade - tiled rows with wave offsets",
+  "DESCRIPTION": "Cascade — tiled wave-offset rows with reflection horizon. Gold text on deep ocean night; bottom half mirrors the cascade as a water surface reflection. HDR text 2.5× for bloom.",
   "INPUTS": [
     { "NAME": "msg", "TYPE": "text", "DEFAULT": " ETHEREA", "MAX_LENGTH": 48 },
     { "NAME": "fontFamily", "LABEL": "Font", "TYPE": "long", "VALUES": [0,1,2,3], "LABELS": ["Inter","Times New Roman","Libre Caslon","Outfit"], "DEFAULT": 0 },
@@ -11,9 +11,12 @@
     { "NAME": "oscSpeed", "LABEL": "Osc Speed", "TYPE": "float", "MIN": 0.0, "MAX": 10.0, "DEFAULT": 0.0 },
     { "NAME": "oscAmount", "LABEL": "Osc Amount", "TYPE": "float", "MIN": 0.0, "MAX": 0.2, "DEFAULT": 0.0 },
     { "NAME": "oscSpread", "LABEL": "Osc Spread", "TYPE": "float", "MIN": 0.0, "MAX": 2.0, "DEFAULT": 0.5 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
-    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 0.85, 0.0, 1.0] },
+    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.02, 0.08, 1.0] },
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false },
+    { "NAME": "hdrBoost", "LABEL": "HDR Boost", "TYPE": "float", "DEFAULT": 2.5, "MIN": 1.0, "MAX": 4.0 },
+    { "NAME": "reflectStrength", "LABEL": "Reflection", "TYPE": "float", "DEFAULT": 0.65, "MIN": 0.0, "MAX": 1.0 },
+    { "NAME": "horizonY", "LABEL": "Horizon", "TYPE": "float", "DEFAULT": 0.5, "MIN": 0.2, "MAX": 0.8 }
   ]
 }*/
 
@@ -134,9 +137,14 @@ vec4 effectCascade(vec2 uv) {
     bool inv = mod(rowIdx, 2.0) < 1.0;
     vec3 fg = inv ? bgColor.rgb : textColor.rgb;
     vec3 bg = inv ? textColor.rgb : bgColor.rgb;
-    vec3 fc = mix(bg, fg, textHit);
+    vec3 fc;
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) {
+        a = textHit;
+        fc = textColor.rgb * hdrBoost;
+    } else {
+        fc = mix(bg, fg * hdrBoost, textHit);
+    }
     return vec4(fc, a);
 }
 
@@ -146,7 +154,29 @@ vec4 effectCascade(vec2 uv) {
 
 void main() {
     vec2 uv = gl_FragCoord.xy / RENDERSIZE.xy;
-    vec4 col = effectCascade(uv);
+
+    // Normal cascade in top half; mirrored UV in bottom half
+    float isReflection = step(uv.y, horizonY);
+    vec2 sampleUV = uv;
+    if (isReflection > 0.5) {
+        // Mirror Y around horizonY, with slight compression
+        sampleUV.y = horizonY + (horizonY - uv.y) * 0.85;
+    }
+
+    vec4 col = effectCascade(sampleUV);
+
+    // HDR boost on text already applied in effectCascade
+    // Reflection fade: lower → more faded + blue-tinted
+    if (isReflection > 0.5) {
+        float depth = (horizonY - uv.y) / horizonY;
+        float fade = reflectStrength * exp(-depth * 3.5);
+        col.rgb *= fade;
+        col.rgb *= vec3(0.7, 0.85, 1.2); // cool blue tint on reflection
+    }
+
+    // Horizon line glow
+    float horizGlow = exp(-abs(uv.y - horizonY) * 80.0);
+    col.rgb += vec3(0.8, 0.85, 1.0) * horizGlow * hdrBoost * 0.4;
 
     if (_voiceGlitch > 0.01) {
         float g = _voiceGlitch;
