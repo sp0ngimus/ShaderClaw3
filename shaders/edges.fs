@@ -1,9 +1,10 @@
 /*{
   "CATEGORIES": ["Filter", "Drawing", "Audio Reactive"],
-  "DESCRIPTION": "Edges, but as a STYLE not a filter. Sobel-on-line-art: a Picasso-style face profile drawn with bold SDF strokes, then re-rendered in five drawing moods (Charcoal/Pencil/Etching/Schiele/Hockney). HDR ink peaks 2.0+ linear so bloom bleeds; one saturated red lip-stud accent at 2.5. Linear HDR out, host tonemaps. Audio drives line weight (bass), nervous jitter (mid), hatching (treble).",
-  "CREDIT": "Easel / edges v4 — drawing as medium",
+  "DESCRIPTION": "Edges, but as a STYLE not a filter — now with DARK CANVAS mode (Caravaggio chiaroscuro). Picasso-style face profile drawn with SDF strokes. Dark Canvas (default ON): black ground, neon-bright HDR strokes with dramatic single-source warm light. Light Canvas: cream paper with dark ink. Five drawing moods. HDR peaks 2.5+ linear. Audio drives line weight (bass), jitter (mid), hatching (treble).",
+  "CREDIT": "Easel / edges v5 — chiaroscuro dark canvas",
   "INPUTS": [
     { "NAME": "inputTex",    "TYPE": "image" },
+    { "NAME": "darkCanvas",  "LABEL": "Dark Canvas",    "TYPE": "bool",  "DEFAULT": true },
     { "NAME": "mood",        "LABEL": "Drawing Mood", "TYPE": "long",  "DEFAULT": 3,
       "VALUES": [0,1,2,3,4],
       "LABELS": ["Charcoal","Pencil","Etching","Schiele","Hockney"] },
@@ -235,8 +236,8 @@ void main() {
 
     vec2 pxSize = 1.0 / res;
     vec2 jpos   = uv * res;
-    float n1 = hash22f(floor(jpos) + floor(t * 1.3));
-    float n2 = hash22f(floor(jpos) + 47.0 + floor(t * 1.3));
+    float n1 = hash22f(floor(jpos) + floor(t * 0.15));
+    float n2 = hash22f(floor(jpos) + 47.0 + floor(t * 0.15));
     vec2 jdir = (vec2(n1, n2) - 0.5) * 2.0;
     float jScale = 0.0;
     if      (modeI == 0) jScale = 1.1;
@@ -398,5 +399,68 @@ void main() {
     col *= 1.0 - 0.18 * dot(vc, vc) * 1.6;
 
     col = max(col, vec3(0.0));
+
+    // ─── DARK CANVAS mode — Caravaggio chiaroscuro reversal ─────────────
+    // Reverse polarity: paper → near-black abyss; ink strokes → bright HDR neon.
+    // A single warm key light from upper-left rakes across the face giving
+    // dramatic unlit shadow on the right side.
+    if (darkCanvas) {
+        // Dramatic single raking light (Caravaggio upper-left)
+        // Approximate "distance from upper-left corner" as luminance proxy:
+        float rakeLight = clamp(1.0 - length((uv - vec2(0.22, 0.78)) * vec2(1.2, 0.9)) * 0.9, 0.0, 1.0);
+        rakeLight = rakeLight * rakeLight * (3.0 - 2.0 * rakeLight); // Hermite smooth
+
+        // Near-black background — dark canvas with subtle warm ambient
+        vec3 darkBg = vec3(0.012, 0.008, 0.005) + vec3(0.04, 0.03, 0.01) * rakeLight;
+
+        // Stroke ink value — luma of the col computed on light canvas
+        float inkLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float paperLum = dot(mix(vec3(0.97, 0.965, 0.94), vec3(0.985, 0.94, 0.84), paperWarmth),
+                             vec3(0.2126, 0.7152, 0.0722));
+        // Ink is where col is darker than paper
+        float inkMask = clamp((paperLum - inkLum) / max(paperLum * 0.9, 0.01), 0.0, 1.0);
+        inkMask = inkMask * inkMask * (3.0 - 2.0 * inkMask); // Hermite
+
+        // Mood-tinted neon stroke color (HDR — peaks 2.5+ in dark mode)
+        vec3 neonStroke;
+        if      (modeI == 0) neonStroke = vec3(2.20, 2.10, 1.95); // charcoal white neon
+        else if (modeI == 1) neonStroke = vec3(0.80, 2.20, 2.40); // pencil electric cyan
+        else if (modeI == 2) neonStroke = vec3(2.35, 1.80, 0.20); // etching amber neon
+        else if (modeI == 3) neonStroke = vec3(2.40, 0.50, 0.15); // schiele orange-red
+        else                  neonStroke = vec3(0.20, 1.60, 2.50); // hockney cobalt blue
+
+        // Rake light tints the stroke slightly warmer at lit side
+        neonStroke = mix(neonStroke, neonStroke * vec3(1.1, 0.95, 0.75), rakeLight * 0.3);
+
+        // Anti-aliased stroke edge glow from Sobel
+        float rimMask = smoothstep(0.28, 0.75, mag) * (1.0 - smoothstep(0.75, 0.98, inkMask));
+        vec3 rimGlow  = neonStroke * rimMask * 0.6;
+
+        // Red accent retains full saturation — ear stud blazes crimson 2.5
+        if (useFallback) {
+            vec3 darkRedCol = (modeI == 4) ? vec3(2.50, 0.10, 0.25) : vec3(2.50, 0.20, 0.15);
+            col = mix(darkBg, neonStroke, inkMask * 0.85) + rimGlow;
+            col = mix(col, darkRedCol, la.red);
+        } else {
+            col = mix(darkBg, neonStroke, inkMask * 0.85) + rimGlow;
+        }
+
+        // Hatching adapts to dark mode — hatched areas glow faint teal
+        if (hatch > 0.01 && (modeI == 0 || modeI == 1 || modeI == 2)) {
+            vec3 hatchNeon = (modeI == 2) ? vec3(0.20, 0.80, 1.00) * 0.8 :
+                                             vec3(0.50, 1.00, 0.70) * 0.5;
+            col += hatchNeon * clamp(hatch, 0.0, 1.0) * 0.40;
+        }
+
+        // Vignette — crush to true black at corners
+        vec2 vc2 = uv - 0.5;
+        float vig = 1.0 - 0.65 * dot(vc2, vc2) * 3.0;
+        col *= max(vig, 0.0);
+
+        col = max(col, vec3(0.0));
+        gl_FragColor = vec4(col, 1.0);
+        return;
+    }
+
     gl_FragColor = vec4(col, 1.0);
 }
