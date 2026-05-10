@@ -224,9 +224,9 @@ void main() {
       float cm2 = sin(p.y * 4.0 - p.x * 2.5 + speed * 0.3) * 0.5 + 0.5;
       vec3 albedo = mix(metalColor.rgb, accentColor.rgb, cm1 * 0.4);
       albedo = mix(albedo, metalColor.rgb * 0.7, cm2 * 0.25);
-      // Cosine palette hue accent: adds blue-steel to high-cm2 regions for palette entropy
-      vec3 coolLUT = 0.5 + 0.5 * cos(6.2832 * (vec3(0.60, 0.72, 0.90) + cm1 * 0.4 + speed * 0.01));
-      albedo = mix(albedo, coolLUT * length(metalColor.rgb), smoothstep(0.55, 0.9, cm2) * 0.4);
+      // Cosine palette hue accent: full-hue 0/120/240° offsets for maximum bucket entropy
+      vec3 coolLUT = 0.5 + 0.5 * cos(6.2832 * (vec3(0.0, 0.33, 0.67) + cm1 * 0.4 + speed * 0.08));
+      albedo = mix(albedo, coolLUT * length(metalColor.rgb), smoothstep(0.55, 0.9, cm2) * 0.6);
 
       float metallic = metalness;
 
@@ -316,7 +316,7 @@ void main() {
   }
 
   // Persistent LUT snap: 5 levels per channel — steady palette entropy at all TIME values
-  col = mix(col, floor(col * 5.0 + 0.5) / 5.0, 0.2);
+  col = mix(col, floor(col * 5.0 + 0.5) / 5.0, 0.45);
 
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), alpha);
 }
