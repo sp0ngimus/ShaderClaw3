@@ -41,7 +41,10 @@ vec4 passSwirl(vec2 fragCoord) {
 
 vec4 passFinal(vec2 fragCoord) {
     vec2 uv = fragCoord / RENDERSIZE;
-    vec4 raw = pow(texture(swirlBuf, uv), vec4(1.0 / gamma));
+    vec2 drift = vec2(sin(TIME * 0.4), cos(TIME * 0.3)) * (0.005 + audioLevel * 0.01);
+    vec4 raw = pow(texture(swirlBuf, uv + drift), vec4(1.0 / gamma));
+    float edgeMag = length(raw.rgb - pow(texture(swirlBuf, uv + drift + 1.0 / RENDERSIZE), vec4(1.0 / gamma)).rgb) * 4.0;
+    raw.rgb += vec3(edgeMag) * vec3(1.0, 0.9, 0.5);
     return mix(raw, floor(raw * 6.0 + 0.5) / 6.0, 0.25);
 }
 
