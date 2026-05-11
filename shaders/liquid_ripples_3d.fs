@@ -49,7 +49,7 @@ void main() {
 
         // Ripple source per layer. Wave height = sin(distance × freq − phase).
         // freqScale × (1+depth) makes front ripples tighter than back.
-        vec2 src = hashPos(L);
+        vec2 src = hashPos(L) + vec2(sin(TIME * 0.3 + float(L) * 1.7), cos(TIME * 0.2 + float(L) * 2.3)) * (0.08 + audioBass * 0.1);
         float dist = length(pp - src);
         float h = sin(dist * freqScale * (0.6 + depth * 0.8) - TIME * speed) * amp;
         totalH += h * (1.0 - depth);  // front layers contribute more to refraction
