@@ -122,8 +122,8 @@ void main() {
     float fi = float(i);
     float phase = fi * TAU / 6.0;
     g_pos[i] = vec3(
-      sin(speed * 0.7 + phase) * 0.8 + sin(speed * 0.3 + phase * 2.3) * 0.3,
-      cos(speed * 0.5 + phase * 1.4) * 0.6 + sin(speed * 0.8 + phase * 0.7) * 0.25,
+      sin(speed * 0.7 + phase) * (0.8 + audioBass * 0.5) + sin(speed * 0.3 + phase * 2.3) * 0.3,
+      cos(speed * 0.5 + phase * 1.4) * (0.6 + audioMid * 0.4) + sin(speed * 0.8 + phase * 0.7) * 0.25,
       sin(speed * 0.6 + phase * 1.8) * 0.5 + cos(speed * 0.4 + phase * 2.1) * 0.2
     );
     float base = (0.45 + fi * 0.03) * blobSize;
@@ -282,8 +282,8 @@ void main() {
   } else if (!transparentBg) {
     // Palette boost: hue sweep across screen → color-bucket diversity
     float bgPhi = atan(uv.y, uv.x) * (1.0 / 6.28318);
-    col = 0.55 * (0.5 + 0.5 * sin(bgPhi * 6.0 + TIME * 0.12 + vec3(0.0, 2.094, 4.189)));
-    col += 0.20 * (0.5 + 0.5 * sin(bgPhi * 3.0 - TIME * 0.08 + vec3(1.047, 3.142, 5.236)));
+    col = 0.55 * (0.5 + 0.5 * sin(bgPhi * 6.0 + TIME * 0.5 + vec3(0.0, 2.094, 4.189)));
+    col += 0.20 * (0.5 + 0.5 * sin(bgPhi * 3.0 - TIME * 0.35 + vec3(1.047, 3.142, 5.236)));
 
     // Atmospheric glow
     float closestT = max(-dot(ro, rd), 0.0);
