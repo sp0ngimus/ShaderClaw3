@@ -3,7 +3,7 @@
   "DESCRIPTION": "Metamorphosis — raymarched liquid-metal metaballs with studio lighting, soft shadows, and texture masking",
   "INPUTS": [
     { "NAME": "morphSpeed", "TYPE": "float", "DEFAULT": 0.5, "MIN": 0.0, "MAX": 1.0, "LABEL": "Morph Speed" },
-    { "NAME": "blobCount", "TYPE": "float", "DEFAULT": 4.0, "MIN": 2.0, "MAX": 6.0, "LABEL": "Blob Count" },
+    { "NAME": "blobCount", "TYPE": "float", "DEFAULT": 6.0, "MIN": 2.0, "MAX": 6.0, "LABEL": "Blob Count" },
     { "NAME": "metalColor", "LABEL": "Metal Color", "TYPE": "color", "DEFAULT": [0.85, 0.65, 0.3, 1.0] },
     { "NAME": "accentColor", "LABEL": "Accent", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
     { "NAME": "metalness", "LABEL": "Metalness", "TYPE": "float", "DEFAULT": 0.9, "MIN": 0.0, "MAX": 1.0 },
@@ -121,11 +121,11 @@ void main() {
     if (i >= g_count) break;
     float fi = float(i);
     float phase = fi * TAU / 6.0;
-    g_pos[i] = vec3(
+    g_pos[i] = (vec3(
       sin(speed * 0.7 + phase) * (0.8 + audioBass * 0.5) + sin(speed * 0.3 + phase * 2.3) * 0.3,
       cos(speed * 0.5 + phase * 1.4) * (0.6 + audioMid * 0.4) + sin(speed * 0.8 + phase * 0.7) * 0.25,
       sin(speed * 0.6 + phase * 1.8) * 0.5 + cos(speed * 0.4 + phase * 2.1) * 0.2
-    );
+    ) + vec3(sin(TIME * 0.22 + phase), cos(TIME * 0.17 + phase), 0.0) * 0.25) * (1.0 + audioBass * 0.4);
     float base = (0.45 + fi * 0.03) * blobSize;
     float pulse = sin(speed * 1.2 + fi * 1.7) * 0.08 + sin(speed * 0.5 + fi * 3.1) * 0.05;
     float r = base + pulse;
