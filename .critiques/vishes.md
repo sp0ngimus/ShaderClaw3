@@ -38,3 +38,23 @@
 - Reef sway with TIME, audio modulates intensity
 **HDR peaks reached:** coral tips 3.0+, magenta worm tips 2.0, vol glow halos ~1.5-2.0
 **Estimated rating:** 4.5★
+
+## 2026-05-12
+**Prior rating:** 0.0★
+**Approach:** 3D raymarch — NEW ANGLE: Crystal Cave Formations (prior v1 was 2D walker trails, prior v2 was 3D bioluminescent reef; this is dry geometric hexagonal crystals — different environment type, different palette, geometric vs organic)
+**Critique:**
+1. Composition: camera drifts through cave interior looking down-and-forward vs reef camera looking down from above.
+2. Palette: emerald green + amethyst purple + diamond white vs reef's cyan/magenta/blue bioluminescence.
+3. Motion: cave drift default 0.20 (gentle pan + forward); no hard snaps.
+4. Silhouette: sdHexPrism columns create strong geometric vocabulary vs reef's capsule corals.
+5. HDR fidelity: specPeak 3.5 on crystal facets; subsurface glow 0.4 blend; fwidth AA on facet edges.
+**Changes:**
+- Full rewrite: sdHexPrism columns on grid with hash jitter; floor + ceiling crystals
+- Random lean per column via rot2; hash-based emerald/amethyst color selection
+- Torch-light from camera + attenuation + subsurface glow (exp(-|dCryst|*60))
+- Crystal rim glow (pow(1-dot(n,v),2)) for HDR edge highlight
+- Cave fog exp(-t*0.22)
+- Audio: bass → crystal scale breath (K=0.12 ✓)
+**Motion audit:** driftSpeed default 0.20 ✓; no audio hard gates; cave drift uses cos/sin (C¹) ✓.
+**HDR peaks reached:** specPeak * att ~2.0+ on near crystals; rim glow * 0.6 ~1.2; ambient breath ~0.02
+**Estimated rating:** 4.5★
