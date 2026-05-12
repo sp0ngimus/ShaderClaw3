@@ -3,7 +3,7 @@
   "CREDIT": "ShaderClaw — inspired by Clear Supply Flüx Modular soft cell kit",
   "CATEGORIES": ["Generator", "Text"],
   "INPUTS": [
-    { "NAME": "msg", "TYPE": "text", "DEFAULT": "", "MAX_LENGTH": 48 },
+    { "NAME": "msg", "TYPE": "text", "DEFAULT": "BUBBLES APPEAR AS YOU SPEAK", "MAX_LENGTH": 48 },
     { "NAME": "fontFamily", "LABEL": "Font", "TYPE": "long", "DEFAULT": 0, "VALUES": [0,1,2,3], "LABELS": ["Inter","Times","Caslon","Outfit"] },
     { "NAME": "clusterCount", "LABEL": "Clusters", "TYPE": "long", "DEFAULT": 9, "VALUES": [4,6,8,9,10,12,14,16], "LABELS": ["4","6","8","9","10","12","14","16"] },
     { "NAME": "nodesPerCluster", "LABEL": "Nodes / Cluster", "TYPE": "long", "DEFAULT": 1, "VALUES": [1,2,3,4,5], "LABELS": ["1","2","3","4","5"] },
@@ -164,14 +164,17 @@ void main() {
     float charW     = charH * (5.0 / 7.0);
     float kern      = charW * kerning;
 
-    // No active utterance: render empty canvas. msgAge < 0 means there
-    // has been no message; total==0 means message is currently empty.
-    // Default behaviour is nothing-until-someone-speaks.
-    if (msgAge < 0.0 || total <= 0) {
+    // No text → blank canvas. Empty msg = nothing to say. When a live
+    // utterance is driving `msg` via cue.latest, the typewriter grows
+    // total from 0 → full so bubbles appear progressively. When the
+    // user typed `msg` manually (no live transcript), total jumps to
+    // full immediately and bubbles use the static fallback below.
+    if (total <= 0) {
         if (transparentBg) { gl_FragColor = vec4(0.0); return; }
         gl_FragColor = vec4(bgColor.rgb, 1.0);
         return;
     }
+    bool liveUtterance = msgAge >= 0.0;
 
     // Each cluster owns a contiguous chunk of the message. As the
     // typewriter reveal pushes new chars, clusters spawn one after
@@ -218,19 +221,28 @@ void main() {
         int chunkStart = c * chunkLen;
         if (chunkStart >= total) continue;
 
-        // Birth time = when typewriter reveals the cluster's first char.
-        // Per-cluster age tracks spawn → hold → exit → gone purely from
-        // the utterance window (msgAge resets on every new utterance,
-        // so old clusters vanish instantly when a new one starts).
-        float tBirth = float(chunkStart) / CPS_EST;
-        float tAge   = msgAge - tBirth;
-        if (tAge < 0.0) continue;
-        if (tAge > SPAWN_DUR + HOLD_DUR + EXIT_DUR) continue;
-
-        float popIn = smoothstep(0.0, SPAWN_DUR, tAge);
-        float exitT = clamp(
-            (tAge - SPAWN_DUR - HOLD_DUR) / max(EXIT_DUR, 1e-3),
-            0.0, 1.0);
+        // Two lifecycle modes:
+        //   LIVE (msgAge ≥ 0): each cluster is born when the typewriter
+        //     reveals its first char; it pops in, holds, drifts up and
+        //     exits. msgAge resets on every new utterance.
+        //   STATIC (msgAge < 0, manual msg only): all clusters always
+        //     alive at full size — no spawn-exit animation. Lets users
+        //     preview the shader without a live transcript.
+        float tAge, popIn, exitT;
+        if (liveUtterance) {
+            float tBirth = float(chunkStart) / CPS_EST;
+            tAge = msgAge - tBirth;
+            if (tAge < 0.0) continue;
+            if (tAge > SPAWN_DUR + HOLD_DUR + EXIT_DUR) continue;
+            popIn = smoothstep(0.0, SPAWN_DUR, tAge);
+            exitT = clamp(
+                (tAge - SPAWN_DUR - HOLD_DUR) / max(EXIT_DUR, 1e-3),
+                0.0, 1.0);
+        } else {
+            tAge  = SPAWN_DUR + HOLD_DUR * 0.5;   // mid-life
+            popIn = 1.0;
+            exitT = 0.0;
+        }
         float fadeOut = 1.0 - exitT;
         float env     = popIn * fadeOut;
         if (env < 0.01) continue;
