@@ -9,7 +9,7 @@
     { "NAME": "nodesPerCluster", "LABEL": "Nodes / Cluster", "TYPE": "long", "DEFAULT": 3, "VALUES": [2,3,4,5], "LABELS": ["2","3","4","5"] },
     { "NAME": "spawnRate", "LABEL": "Spawn Rate", "TYPE": "float", "DEFAULT": 0.18, "MIN": 0.04, "MAX": 0.8 },
     { "NAME": "bridgeK", "LABEL": "Bridge Smoothness", "TYPE": "float", "DEFAULT": 0.045, "MIN": 0.0, "MAX": 0.12 },
-    { "NAME": "interBridgeK", "LABEL": "Inter-Cluster Bridge", "TYPE": "float", "DEFAULT": 0.18, "MIN": 0.0, "MAX": 0.35 },
+    { "NAME": "interBridgeK", "LABEL": "Inter-Cluster Bridge", "TYPE": "float", "DEFAULT": 0.02, "MIN": 0.0, "MAX": 0.35 },
     { "NAME": "morphAmp", "LABEL": "Bridge Morph", "TYPE": "float", "DEFAULT": 0.45, "MIN": 0.0, "MAX": 1.5 },
     { "NAME": "nodeRadius", "LABEL": "Node Radius", "TYPE": "float", "DEFAULT": 0.095, "MIN": 0.025, "MAX": 0.18 },
     { "NAME": "radiusVariance", "LABEL": "Radius Variance", "TYPE": "float", "DEFAULT": 0.55, "MIN": 0.0, "MAX": 1.0 },
@@ -196,23 +196,45 @@ void main() {
         float env = popIn * fadeOut;
         if (env < 0.01) continue;
 
-        // Cluster anchor — deterministic random across screen space, with
-        // a bit of slow drift so the field never feels static.
+        // Grid-packed deterministic anchor — each cluster gets its own
+        // cell so bubbles don't pile up. Grid sized from cluster count
+        // and aspect; small jitter inside the cell keeps the layout
+        // breathing rather than rigid. Like discrete speech bubbles
+        // across the canvas, each in its own spatial neighborhood.
         vec2 baseSeed = hash21(fc * 13.7);
-        // Map [0,1)² to aspect-corrected centered space, with margins so
-        // clusters don't clip the screen edges.
+        int gridX = int(ceil(sqrt(float(clusters) * max(aspect, 0.5))));
+        if (gridX < 1) gridX = 1;
+        int gridY = (clusters + gridX - 1) / gridX;
+        int cx = c - (c / gridX) * gridX;
+        int cy = c / gridX;
+        float canvasW = aspect - 0.18;
+        float canvasH = 0.90;
+        float cellW   = canvasW / float(gridX);
+        float cellH   = canvasH / float(gridY);
         vec2 anchor;
-        anchor.x = (baseSeed.x - 0.5) * (aspect - 0.25);
-        anchor.y = (baseSeed.y - 0.5) * 0.85;
-        // Per-cluster slow drift.
+        anchor.x = -0.5 * canvasW + (float(cx) + 0.5) * cellW;
+        anchor.y = -0.5 * canvasH + (float(cy) + 0.5) * cellH;
+        // Per-cluster jitter inside the cell — keeps the grid from
+        // looking like a literal grid. Capped so bubbles can't reach
+        // the cell boundary (≤ 18% of cell extent each way).
+        anchor.x += (baseSeed.x - 0.5) * cellW * 0.18;
+        anchor.y += (baseSeed.y - 0.5) * cellH * 0.18;
+        // Slow per-cluster drift — gentle organic motion within the cell.
         float driftSeed = fc * 7.21;
-        anchor.x += 0.025 * sin(TIME * 0.18 + driftSeed);
-        anchor.y += 0.020 * cos(TIME * 0.22 + driftSeed * 1.7);
+        anchor.x += cellW * 0.06 * sin(TIME * 0.18 + driftSeed);
+        anchor.y += cellH * 0.06 * cos(TIME * 0.22 + driftSeed * 1.7);
 
         // Two-color tint: alternate by cluster index for visual rhythm.
         vec3 cTint = (mod(fc, 2.0) < 0.5) ? cellA.rgb : cellB.rgb;
         // Pop-in scale (cluster grows from a point at spawn).
         float clusterScale = mix(0.4, 1.0, popIn);
+
+        // Auto-fit: clamp the cluster's max footprint to ~42% of the
+        // smaller cell dimension so neighbours never touch. Cluster
+        // extent ≈ nodeRadius * (max orbR factor 2.0 + max rad factor
+        // 1.32) ≈ nodeRadius * 3.32. fitScale shrinks oversize requests.
+        float fitMax  = 0.42 * min(cellW, cellH);
+        float fitRad  = min(nodeRadius, fitMax / 3.32);
 
         // Build the cluster's metaball SDF: smooth-min of every node circle.
         // Track the closest node so we know which character cell to draw.
@@ -220,7 +242,7 @@ void main() {
         int   nearestNode = 0;
         float nearestDist = 1e6;
         vec2  nearestPos  = anchor;
-        float nearestRad  = nodeRadius;
+        float nearestRad  = fitRad;
 
         for (int n = 0; n < MAX_NODES; n++) {
             if (n >= nodesEach) break;
@@ -230,7 +252,7 @@ void main() {
 
             // Node sits offset from anchor on a slow orbit; offset radius
             // scales with cluster's mean node size.
-            float orbR  = nodeRadius * (1.4 + 0.6 * ns.x);
+            float orbR  = fitRad * (1.4 + 0.6 * ns.x);
             float orbA  = ns.y * 6.2832
                         + TIME * orbitSpeed * (1.0 + 0.4 * (ns.x - 0.5));
             // First node sits closer to anchor; later nodes spread outward.
@@ -240,7 +262,7 @@ void main() {
 
             // Node radius variance — some nodes much bigger than others
             // (matches the "1 big + 2 small bridges" look of the reference).
-            float rad = nodeRadius
+            float rad = fitRad
                       * mix(1.0, 0.4 + 1.4 * hash11(fc * 31.1 + fn * 5.3),
                             radiusVariance);
             // Bass pulse on the freshest cluster.
