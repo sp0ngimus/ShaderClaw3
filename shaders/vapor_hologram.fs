@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Vaporwave Hologram 3D — twin suns sinking into a Tron grid horizon, hot pink to magenta to indigo sky, with 3-5 raymarched SDF primitives (cube, sphere, pyramid, torus) drifting through the scene on independent orbits. No focal element at the optical center. Scanlines, chromatic aberration, HDR peaks on sun discs, grid lines, and sun reflections off the chrome primitives. Single-pass, LINEAR HDR, no internal tonemap. Alive in silence — TIME-driven, audio amplifies.",
+  "DESCRIPTION": "Synthwave Tunnel — 3D raymarched hexagonal neon tube. Camera flies through a receding hex corridor with hot pink and cyan neon ring segments, Tron-grid floor panel below, and twin vaporwave suns glowing at the tunnel exit. Chrome ring reflections, scanlines, chromatic aberration. Single-pass, LINEAR HDR, no tonemap. Calm default flight; audio amplifies pulse.",
   "CATEGORIES": ["Generator", "3D", "Audio Reactive"],
   "CREDIT": "Easel — vaporwave_hologram_3d",
   "INPUTS": [
@@ -68,49 +68,44 @@ float sdPyramid(vec3 p, float h) {
     return sqrt((d2 + q.z * q.z) / m2) * sign(max(q.z, -p.y));
 }
 
-// ── object placement (orbits, never near center) ───────────────────────
-// Each object i in [0..4]: independent orbit radius, angle, height.
-// Ring layout pushed off-center so they drift through edges/quadrants.
-vec3 objCenter(int i, float bass) {
-    float fi = float(i);
-    float ang   = TIME * (0.18 + hash11(fi * 1.9) * 0.32) + fi * (PI * 2.0 / 5.0);
-    float radius = objSpread * (0.9 + 0.4 * hash11(fi * 7.3));
-    // bias each orbit centre off the optical axis so the focal point stays empty
-    vec2 bias = vec2(
-        cos(fi * 1.31 + 0.7) * 0.55 * objSpread,
-        sin(fi * 0.97 + 1.4) * 0.30 * objSpread
+// ── Synthwave Hex Tunnel ─────────────────────────────────────────────────
+// Hollow hexagonal ring frames repeating along Z.
+// Ring XY cross-section: hexagonal — sdHexPrism with Y-axis swapped to Z.
+
+float sdHexPrismZ(vec3 p, float r, float h) {
+    // Hex in XY, extends along Z with half-depth h
+    const vec3 k = vec3(-0.8660254, 0.5, 0.57735);
+    vec2 pxy = abs(p.xy);
+    pxy -= 2.0 * min(dot(k.xy, pxy), 0.0) * k.xy;
+    vec2 d = vec2(
+        length(pxy - vec2(clamp(pxy.x, -k.z*r, k.z*r), r)) * sign(pxy.y - r),
+        abs(p.z) - h
     );
-    float height = 0.25 + sin(TIME * (0.5 + hash11(fi * 3.1) * 0.7) + fi * 1.7) * 0.45;
-    height += bass * 0.15;
-    return vec3(bias.x + cos(ang) * radius, height, bias.y + sin(ang) * radius);
+    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
 }
 
-// returns (dist, matID encoded in fract)
-// matID: 0=sphere chrome-pink, 1=cube chrome-cyan, 2=pyramid chrome-magenta, 3=torus chrome-violet
+// Ring shell: outer hex minus inner hex, sliced to thin slab
+float sdHexRing(vec3 p, float rOuter, float rInner, float depth) {
+    float outer = sdHexPrismZ(p, rOuter, depth);
+    float inner = sdHexPrismZ(p, rInner, depth);
+    return max(outer, -inner);
+}
+
+// returns (dist, matID) — matID 0=pink ring, 1=cyan ring
 vec2 mapObjects(vec3 p, float bass) {
-    int N = int(clamp(objCount, 3.0, 5.0));
-    float best = 1e9;
-    float matID = 0.0;
-    for (int i = 0; i < 5; i++) {
-        if (i >= N) break;
-        float fi = float(i);
-        vec3 c = objCenter(i, bass);
-        vec3 q = p - c;
-        // per-object spin
-        float spinY = TIME * (0.6 + hash11(fi * 5.2) * 1.2) + fi;
-        float spinX = TIME * (0.4 + hash11(fi * 8.7) * 0.9);
-        q.xz = rot2(spinY) * q.xz;
-        q.yz = rot2(spinX) * q.yz;
-        float scl = objScale * (0.7 + hash11(fi * 11.3) * 0.7) * (1.0 + bass * 0.18);
-        int kind = int(mod(fi, 4.0));
-        float d;
-        if      (kind == 0) d = sdSphere(q, scl);
-        else if (kind == 1) d = sdBox(q, vec3(scl * 0.85));
-        else if (kind == 2) d = sdPyramid(q / scl, 1.1) * scl;
-        else                d = sdTorus(q, vec2(scl, scl * 0.32));
-        if (d < best) { best = d; matID = float(kind); }
-    }
-    return vec2(best, matID);
+    float spacing = objSpread * 1.2 + 0.5;   // ring gap driven by objSpread
+    // Modulo along Z so rings repeat
+    float zMod  = mod(p.z + spacing * 0.5, spacing) - spacing * 0.5;
+    int   zIdx  = int(floor((p.z + spacing * 0.5) / spacing));
+    vec3  q     = vec3(p.x, p.y - 0.15, zMod);  // center ring in view
+    float rO    = objScale * 2.5;
+    float rI    = rO - 0.06;
+    float depth = 0.03 + 0.01 * sin(TIME * 0.4 + float(zIdx));
+    float d     = sdHexRing(q, rO, rI, depth);
+    // Audio: rings pulse outward slightly with bass
+    d -= bass * 0.04;
+    float matID = mod(float(zIdx), 2.0);
+    return vec2(d, matID);
 }
 
 vec3 calcNormal(vec3 p, float bass) {
@@ -216,17 +211,20 @@ void main() {
     }
     vec3 bgFinal = vec3(bgR.r, bgCol.g, bgB.b);
 
-    // ── raymarch the 3D drifting primitives ──
-    // camera looking slightly down toward horizon
-    vec3 ro = vec3(0.0, 0.55, 3.4);
+    // ── Synthwave tunnel camera — forward-flying, calm drift ──
+    float tunnelZ = -TIME * gridSpeed * 1.6;
+    float driftX  = sin(TIME * 0.22) * 0.12;
+    float driftY  = 0.15 + cos(TIME * 0.18) * 0.06;
+    vec3 ro = vec3(driftX, driftY, tunnelZ + 0.5);
+
     vec2 ndc = (fragCoord / RENDERSIZE.xy) * 2.0 - 1.0;
     ndc.x *= aspect;
-    // pitch down a touch so primitives float against sky and skim above grid
-    float pitch = -0.05;
-    vec3 fwd = normalize(vec3(0.0, sin(pitch), -cos(pitch)));
-    vec3 right = vec3(1.0, 0.0, 0.0);
-    vec3 up = cross(right, fwd);
-    vec3 rd = normalize(fwd + right * ndc.x * 0.85 + up * ndc.y * 0.85);
+    float yaw   = sin(TIME * 0.13) * 0.06;
+    float pitch = -0.04;
+    vec3 fwd   = normalize(vec3(sin(yaw), sin(pitch), -cos(yaw)));
+    vec3 right = normalize(cross(vec3(0,1,0), fwd));
+    vec3 up    = cross(fwd, right);
+    vec3 rd    = normalize(fwd + right * ndc.x * 0.80 + up * ndc.y * 0.80);
 
     float t = 0.0;
     float matID = 0.0;
@@ -252,40 +250,32 @@ void main() {
         float dC = max(dot(n, lCool), 0.0);
         float dF = max(dot(n, fill),  0.0);
 
-        // base colour per material — chrome with a tint
-        vec3 tint;
-        if      (matID < 0.5) tint = vec3(1.0, 0.55, 0.85);   // sphere — pink chrome
-        else if (matID < 1.5) tint = vec3(0.45, 0.95, 1.0);   // cube   — cyan chrome
-        else if (matID < 2.5) tint = vec3(1.0, 0.30, 0.75);   // pyramid— magenta chrome
-        else                  tint = vec3(0.65, 0.50, 1.0);   // torus  — violet chrome
+        // Hex ring colors: alternating hot pink / electric cyan
+        vec3 tint = (matID < 0.5)
+            ? vec3(1.0, 0.22, 0.72)   // hot pink ring
+            : vec3(0.25, 0.95, 1.0);  // electric cyan ring
 
-        // diffuse shading
-        vec3 lit = tint * (0.18 + 1.1 * dW * vec3(1.0, 0.55, 0.32)
-                                + 0.9 * dC * vec3(1.0, 0.32, 0.62)
-                                + 0.35 * dF * vec3(0.55, 0.65, 1.0));
+        // Neon emission: rings are self-luminous neon tubes (HDR)
+        float emitStr = 1.4 + bass * 0.5;
+        vec3 lit = tint * emitStr;
 
-        // specular highlights — spec reflects sun positions, HDR
+        // Specular glints for chrome-neon effect
         vec3 v = -rd;
         vec3 hW = normalize(lWarm + v);
         vec3 hC = normalize(lCool + v);
-        float spW = pow(max(dot(n, hW), 0.0), 64.0);
-        float spC = pow(max(dot(n, hC), 0.0), 64.0);
-        lit += spW * vec3(1.0, 0.55, 0.20) * sunHDR * 0.6;
-        lit += spC * vec3(1.0, 0.25, 0.65) * sunHDR * 0.6;
+        float spW = pow(max(dot(n, hW), 0.0), 96.0);
+        float spC = pow(max(dot(n, hC), 0.0), 96.0);
+        lit += spW * vec3(1.0, 0.55, 0.20) * sunHDR * 0.45;
+        lit += spC * vec3(0.5, 0.8, 1.0)   * sunHDR * 0.45;
 
-        // sun-disc reflection — sample sky in the reflected direction
-        vec3 r = reflect(rd, n);
-        // map reflected direction to a fake "sky uv" — y from r.y, x from r.x
-        vec2 reflUV = vec2(0.5 + r.x * 0.5, 0.5 + r.y * 0.5);
-        reflUV = clamp(reflUV, 0.0, 1.0);
-        vec3 reflSun = twinSun(reflUV, 1.0, bass);
-        vec3 reflSky = skyColor(reflUV);
-        lit += (reflSun + reflSky * 0.25) * 0.35;
+        // Reflected twin suns in ring surface
+        vec3 rfl = reflect(rd, n);
+        vec2 reflUV = clamp(vec2(0.5 + rfl.x*0.5, 0.5 + rfl.y*0.5), 0.0, 1.0);
+        lit += (twinSun(reflUV, 1.0, bass) + skyColor(reflUV)*0.2) * 0.25;
 
-        // fresnel rim — cyan/magenta edge bloom
-        float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-        lit += fres * mix(vec3(0.4, 1.0, 1.0), vec3(1.0, 0.4, 0.9), 0.5 + 0.5 * sin(TIME * 0.7 + matID))
-             * 1.2;
+        // Fresnel glow at ring edges — additive HDR
+        float fres = pow(1.0 - max(dot(n, v), 0.0), 2.5);
+        lit += fres * tint * 1.8;
 
         col = lit;
     }
