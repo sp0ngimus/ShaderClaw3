@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Oil paint — Kuwahara painterly filter with HDR impasto relief, specular highlights, and a procedural warm-pigment swirl fallback when no texture is bound. TIME-driven living surface, audio non-gating.",
+  "DESCRIPTION": "Oil paint — Kuwahara painterly filter with HDR impasto relief, specular highlights, and a procedural cool night-seascape pigment fallback when no texture is bound. Prussian blue, cerulean, seafoam, slate. TIME-driven living surface, audio non-gating.",
   "CREDIT": "ShaderClaw (Kuwahara approach inspired by flockaroo)",
   "CATEGORIES": ["Effect", "Generator", "Audio Reactive"],
   "INPUTS": [
@@ -67,12 +67,12 @@ vec3 procPigment(vec2 uv, float t) {
     );
     vec2 pp = p + 0.32 * warp;
 
-    // Saturated oil palette (linear-ish, deliberately bright so bloom bites).
-    vec3 cadRed     = vec3(1.05, 0.18, 0.10);
-    vec3 ultramar   = vec3(0.10, 0.18, 0.95);
-    vec3 viridian   = vec3(0.05, 0.62, 0.42);
-    vec3 naples     = vec3(1.10, 0.82, 0.32);
-    vec3 umber      = vec3(0.22, 0.14, 0.08);
+    // Cool night-seascape palette: prussian blue, cerulean, seafoam, slate, ink.
+    vec3 prussian  = vec3(0.02, 0.12, 0.38);   // deep night sea
+    vec3 cerulean  = vec3(0.05, 0.45, 0.88);   // sky reflection
+    vec3 seafoam   = vec3(0.18, 0.82, 0.72);   // breaking wave foam — HDR
+    vec3 slate     = vec3(0.28, 0.30, 0.38);   // grey rock shelf
+    vec3 inkBlue   = vec3(0.01, 0.04, 0.12);   // canvas base (near-black ocean)
 
     // Per-blob radial weights. Variable sizes for compositional interest.
     float w0 = exp(-dot(pp - c0, pp - c0) * 5.5);
@@ -82,17 +82,16 @@ vec3 procPigment(vec2 uv, float t) {
     float w4 = exp(-dot(pp - c4, pp - c4) * 6.0);
     float wSum = w0 + w1 + w2 + w3 + w4 + 0.18;
 
-    // Weighted color blend — umber as base canvas tone.
-    vec3 col = umber * 0.18;
-    col += cadRed   * w0;
-    col += ultramar * w1;
-    col += viridian * w2;
-    col += naples   * w3;
-    col += cadRed   * w4 * 0.7 + ultramar * w4 * 0.3;
+    // Weighted color blend — inkBlue as base canvas.
+    vec3 col = inkBlue * 0.18;
+    col += prussian * w0;
+    col += cerulean * w1;
+    col += seafoam  * w2 * 0.9;
+    col += slate    * w3;
+    col += prussian * w4 * 0.6 + cerulean * w4 * 0.4;
     col /= wSum;
 
-    // Palette-knife streak texture: high-freq directional noise overlay
-    // that breaks the blobs into thick brush strokes.
+    // Palette-knife streak texture
     vec2 sp = pp * 9.0;
     float angle = 0.6 + 0.4 * fbm(pp * 1.2);
     vec2 dir = vec2(cos(angle), sin(angle));
@@ -100,15 +99,14 @@ vec3 procPigment(vec2 uv, float t) {
     float knife = smoothstep(0.35, 0.85, streak);
     col *= mix(0.78, 1.32, knife);
 
-    // Pigment grain — fine high-freq tint variation.
+    // Pigment grain
     float grain = fbm(pp * 22.0 + t * 0.05);
     col *= mix(0.92, 1.08, grain);
 
-    // HDR impasto highlights: cresting ridges where streak peaks coincide
-    // with blob centers — push to ~1.8 linear so bloom catches them.
+    // HDR foam crest highlights — seafoam peaks at ~1.9 linear for bloom.
     float ridge = smoothstep(0.78, 0.98, streak) *
                   smoothstep(0.35, 0.95, max(max(w0, w1), max(max(w2, w3), w4)));
-    col += vec3(1.05, 0.98, 0.82) * ridge * 1.1;
+    col += vec3(0.75, 1.00, 1.05) * ridge * 1.1;   // cool white seafoam HDR
 
     return col;
 }
