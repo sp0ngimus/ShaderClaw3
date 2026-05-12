@@ -16,3 +16,20 @@
 - HDR peak: magma top ramp → 3.0× white-hot on high-intensity seeds
 **HDR peaks reached:** white-hot seeds 3.0, gold 2.0, orange 1.3
 **Estimated rating:** 3.5★
+
+## 2026-05-12
+**Prior rating:** 0.0★
+**Approach:** 2D refine — NEW ANGLE: Arctic aurora palette (prior was volcanic magma palette)
+**Critique:**
+1. Reference fidelity: Backward-trace LIC flow field is well-implemented; palette now matches arctic borealis reference.
+2. Compositional craft: Deep arctic night (nearly black) → aurora cyan → violet → electric teal/lime — 4-stop gradient with strong saturation contrast.
+3. Technical execution: streamLift multiplier raised 0.55→0.72 for brighter aurora stream highlights; threshold lowered 0.25→0.20 catches more stream regions.
+4. Liveness: Procedural fallback also uses aurora palette so output is vivid even without seeds hitting.
+5. Differentiation: Completely different palette mood from prior magma entry — cool vs warm, polar vs volcanic.
+**Changes:**
+- Replaced grassPalette() with aurora palette: deep arctic night→cyan→violet→electric teal/lime
+- streamLift multiplier: 0.55→0.72
+- streamLift lower threshold: 0.25→0.20
+- Description updated to "Aurora Borealis edition"
+**HDR peaks reached:** aurora streams 1.6–2.2 linear (per description)
+**Estimated rating:** 3.5★

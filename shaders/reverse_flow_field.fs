@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Reverse Flow Field — colored seeds streaked backward through an animated cellular flow field. Linear HDR output; peaks 1.4–2.0 on flow streams and audio hits.",
+  "DESCRIPTION": "Reverse Flow Field — Aurora Borealis edition. Colored seeds streaked backward through a cellular flow field; cool arctic palette (cyan, violet, electric teal, lime). Linear HDR output; peaks 1.6–2.2 on aurora streams.",
   "CREDIT": "Ported from Shadertoy X3BBD1 by webwarrior (Material Maker output)",
   "CATEGORIES": ["Generator", "Flow"],
   "INPUTS": [
@@ -109,14 +109,15 @@ float dots(vec2 uv, float size, float density, float seed) {
     return step(rand1(seed2 + point_pos), density);
 }
 
+// Arctic aurora palette: deep void → cyan → violet → electric teal → lime
 vec3 grassPalette(float t) {
-    vec3 a = vec3(0.05, 0.32, 0.16);
-    vec3 b = vec3(0.95, 0.85, 0.45);
-    vec3 c = vec3(0.30, 0.85, 0.55);
-    vec3 d = vec3(1.00, 0.65, 0.30);
-    if (t < 0.33) return mix(a, c, t / 0.33);
-    if (t < 0.66) return mix(c, b, (t - 0.33) / 0.33);
-    return mix(b, d, (t - 0.66) / 0.34);
+    vec3 a = vec3(0.0, 0.04, 0.12);   // deep arctic night
+    vec3 b = vec3(0.0, 0.85, 0.85);   // aurora cyan
+    vec3 c = vec3(0.55, 0.1, 1.00);   // aurora violet
+    vec3 d = vec3(0.0, 1.00, 0.45);   // electric teal/lime
+    if (t < 0.33) return mix(a, b, t / 0.33);
+    if (t < 0.66) return mix(b, c, (t - 0.33) / 0.33);
+    return mix(c, d, (t - 0.66) / 0.34);
 }
 
 vec4 passPositions(vec2 fragCoord) {
@@ -185,10 +186,10 @@ vec4 passImage(vec2 fragCoord) {
     // Ensure the fallback always contributes a baseline glow
     col += fallback * 0.25;
 
-    // Linear HDR — no tonemap. Peaks lifted onto flow streams via stream-mass weighting,
-    // and onto audio hits via bass+level boost. Target peak ~1.4–2.0 linear.
+    // Linear HDR — no tonemap. Aurora peaks lifted onto flow streams.
+    // Target peak ~1.6–2.2 linear (aurora colors are intrinsically bright).
     float streamMass = clamp(dot(col, vec3(0.333)), 0.0, 1.5);
-    float streamLift = 1.0 + 0.55 * smoothstep(0.25, 0.9, streamMass);
+    float streamLift = 1.0 + 0.72 * smoothstep(0.20, 0.85, streamMass);
 
     // Audio is a modulator (multiplicative lift), never a gate — output is visible at zero audio.
     float audio = max(audioLevel, audioBass);
