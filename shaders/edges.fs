@@ -1,7 +1,7 @@
 /*{
   "CATEGORIES": ["Filter", "Drawing", "Audio Reactive"],
-  "DESCRIPTION": "Edges, but as a STYLE not a filter. Sobel-on-line-art: a Picasso-style face profile drawn with bold SDF strokes, then re-rendered in five drawing moods (Charcoal/Pencil/Etching/Schiele/Hockney). HDR ink peaks 2.0+ linear so bloom bleeds; one saturated red lip-stud accent at 2.5. Linear HDR out, host tonemaps. Audio drives line weight (bass), nervous jitter (mid), hatching (treble).",
-  "CREDIT": "Easel / edges v4 — drawing as medium",
+  "DESCRIPTION": "Edges v5 — drawing as medium. Sobel-on-line-art: a wide coastal panorama — sea cliff, lighthouse tower, gulls, and horizon — drawn with bold SDF strokes in five moods (Charcoal/Pencil/Etching/Schiele/Hockney). HDR ink peaks 2.0+ so bloom bleeds; beacon lamp glows HDR amber. Linear HDR out. Audio drives line weight, jitter, hatching.",
+  "CREDIT": "Easel / edges v5 — landscape composition",
   "INPUTS": [
     { "NAME": "inputTex",    "TYPE": "image" },
     { "NAME": "mood",        "LABEL": "Drawing Mood", "TYPE": "long",  "DEFAULT": 3,
@@ -79,95 +79,90 @@ float sdArc(vec2 p, vec2 c, float r, float a0, float a1) {
     return length(p - onArc);
 }
 
-// ─── PICASSO FACE PROFILE ────────────────────────────────────────────────
-// Returns ink density (0..1, with HDR boost potential >1 inside) for the
-// face line-art, plus a separate "redAccent" mask. The whole thing breathes
-// slowly via t. Coords are normalized 0..1, face roughly centered.
+// ─── COASTAL PANORAMA ───────────────────────────────────────────────────
+// Wide-format scene: sea cliff (left half), lighthouse tower (right-centre),
+// three seagull arcs in sky, horizon line, simple wave suggestion at bottom.
+// Returns ink density + HDR amber accent (lighthouse beacon lamp).
 struct LineArt { float ink; float red; };
 
-LineArt facePortrait(vec2 uv, float t) {
+LineArt coastalScene(vec2 uv, float t) {
     LineArt o; o.ink = 0.0; o.red = 0.0;
 
-    float sway = 0.010 * sin(t * 0.55);
-    float nod  = 0.006 * sin(t * 0.7 + 1.0);
+    // Slight global sway (wind effect)
+    float sway = 0.004 * sin(t * 0.42);
+    vec2 p = uv + vec2(sway, 0.0);
 
-    // Work in a face-local space, aspect-corrected, looking left.
-    vec2 c = vec2(0.52 + sway, 0.50 + nod);
-    vec2 p = (uv - c);
-    p.x *= 1.0;  // keep square-ish; the face is tall
+    float wBold = 0.0055;   // cliffs, tower
+    float wMid  = 0.0040;   // horizon, waves
+    float wThin = 0.0028;   // gulls, detail
 
-    // Stroke half-width (in normalized units). Bold.
-    float wMain = 0.0070;  // chin / nose / hairline
-    float wThin = 0.0050;  // ear, neck
-    float wDot  = 0.018;   // eye dot radius (filled)
-
-    // 1) CHIN + JAW curve — bezier from chin tip up to under-ear
-    //    (looking left: chin at left, jaw curves up to the right)
+    // 1) HORIZON LINE — straight from left to right at y≈0.46
     {
-        vec2 a = vec2(-0.16,  -0.20);   // chin tip (front)
-        vec2 b = vec2(-0.02,  -0.26);   // jaw bottom
-        vec2 cc= vec2( 0.18,  -0.10);   // under ear
+        float d = abs(p.y - (0.455 + 0.004 * sin(t * 0.3)));
+        o.ink = max(o.ink, smoothstep(wMid, wMid * 0.35, d));
+    }
+
+    // 2) CLIFF SILHOUETTE — left side, rugged diagonal bezier up from bottom-left
+    {
+        vec2 a  = vec2(0.02, 0.18);   // base of cliff
+        vec2 b  = vec2(0.12, 0.38);   // mid-slope bulge
+        vec2 cc = vec2(0.22, 0.46);   // cliff top at horizon
         float d = sdBezier(p, a, b, cc);
-        o.ink = max(o.ink, smoothstep(wMain, wMain * 0.4, d));
+        o.ink = max(o.ink, smoothstep(wBold, wBold * 0.35, d));
+        // Second craggy outcrop
+        float d2 = sdSeg(p, vec2(0.08, 0.28), vec2(0.05, 0.20));
+        o.ink = max(o.ink, smoothstep(wMid, wMid * 0.4, d2));
     }
 
-    // 2) NECK — two short strokes dropping from jaw
+    // 3) LIGHTHOUSE TOWER — vertical rectangle shaft, centred at x≈0.62
+    //    tapered: slightly wider at base than top
     {
-        float d1 = sdSeg(p, vec2( 0.18, -0.10), vec2( 0.16, -0.40));
-        float d2 = sdSeg(p, vec2(-0.04, -0.26), vec2(-0.06, -0.40));
-        o.ink = max(o.ink, smoothstep(wThin, wThin * 0.4, min(d1, d2)));
+        float tx = 0.62;
+        // Shaft left edge
+        float d1 = sdSeg(p, vec2(tx - 0.020, 0.46), vec2(tx - 0.014, 0.62));
+        // Shaft right edge
+        float d2 = sdSeg(p, vec2(tx + 0.020, 0.46), vec2(tx + 0.014, 0.62));
+        // Base platform
+        float d3 = sdSeg(p, vec2(tx - 0.028, 0.46), vec2(tx + 0.028, 0.46));
+        // Lantern house top arc
+        float d4 = sdArc(p, vec2(tx, 0.64), 0.018, 0.0, 3.14159);
+        o.ink = max(o.ink, smoothstep(wBold, wBold * 0.35, min(min(d1, d2), min(d3, d4))));
+
+        // BEACON LAMP — single saturated dot at lantern centre (HDR amber accent)
+        float dLamp = length(p - vec2(tx + 0.001 * sin(t * 1.2), 0.645));
+        o.red = max(o.red, smoothstep(0.014, 0.004, dLamp));
     }
 
-    // 3) NOSE RIDGE — bezier from forehead down to nostril tip, with bridge
+    // 4) WAVE SUGGESTIONS — short sub-horizon arc strokes
     {
-        vec2 a = vec2(-0.10,  0.18);   // brow ridge
-        vec2 b = vec2(-0.22,  0.02);   // bridge curve out
-        vec2 cc= vec2(-0.18, -0.10);   // nostril base (Picasso: turns back in)
+        float wy = 0.38 + 0.01 * sin(t * 0.8);
+        float d1 = sdArc(p, vec2(0.28, wy), 0.045, -0.8, 0.8);
+        float d2 = sdArc(p, vec2(0.45, wy - 0.025), 0.035, -0.9, 0.9);
+        float d3 = sdArc(p, vec2(0.15, wy + 0.018), 0.030, -0.7, 1.0);
+        o.ink = max(o.ink, smoothstep(wThin, wThin * 0.4, min(min(d1, d2), d3)));
+    }
+
+    // 5) SEAGULLS — three M-arch pairs in the sky
+    {
+        // Each gull: two short arc segments opening upward
+        for (int i = 0; i < 3; i++) {
+            float fi = float(i);
+            float gx = 0.30 + fi * 0.22 + 0.012 * sin(t * (0.5 + fi * 0.3) + fi * 1.7);
+            float gy = 0.72 + fi * 0.04 + 0.008 * cos(t * (0.4 + fi * 0.2));
+            float r  = 0.020 - fi * 0.003;
+            float dL = sdArc(p, vec2(gx - r, gy), r, -2.8, 0.0);
+            float dR = sdArc(p, vec2(gx + r, gy), r,  0.0, 2.8);
+            o.ink = max(o.ink, smoothstep(wThin, wThin * 0.35, min(dL, dR)));
+        }
+    }
+
+    // 6) DISTANT HEADLAND — faint bump on horizon, far right
+    {
+        vec2 a = vec2(0.78, 0.455);
+        vec2 b = vec2(0.85, 0.480);
+        vec2 cc= vec2(0.92, 0.455);
         float d = sdBezier(p, a, b, cc);
-        o.ink = max(o.ink, smoothstep(wMain, wMain * 0.35, d));
-        // Tiny nostril flick
-        float dn = sdSeg(p, vec2(-0.18, -0.10), vec2(-0.10, -0.11));
-        o.ink = max(o.ink, smoothstep(wThin, wThin * 0.4, dn));
-    }
-
-    // 4) HAIRLINE / FOREHEAD — long curving stroke over top of head
-    {
-        vec2 a = vec2(-0.10,  0.18);   // meets nose at brow
-        vec2 b = vec2(-0.04,  0.34);   // forehead top
-        vec2 cc= vec2( 0.20,  0.22);   // crown back
-        float d = sdBezier(p, a, b, cc);
-        o.ink = max(o.ink, smoothstep(wMain, wMain * 0.4, d));
-        // Stray hair flick at crown
-        float dh = sdSeg(p, vec2(0.20, 0.22), vec2(0.26, 0.30));
-        o.ink = max(o.ink, smoothstep(wThin * 0.8, wThin * 0.3, dh));
-    }
-
-    // 5) EAR CURL — small spiral arc on the side of the head
-    {
-        vec2 ec = vec2(0.16, 0.04);
-        float d1 = sdArc(p, ec, 0.045, -1.6, 2.0);   // outer C
-        float d2 = sdArc(p, ec, 0.020, -0.8, 2.4);   // inner curl
-        o.ink = max(o.ink, smoothstep(wThin, wThin * 0.4, min(d1, d2)));
-
-        // RED EAR STUD — single saturated dot just below ear
-        float dStud = length(p - vec2(0.165, -0.005));
-        o.red = max(o.red, smoothstep(0.011, 0.004, dStud));
-    }
-
-    // 6) EYE DOT — a single bold filled circle (Picasso "•" eye)
-    {
-        vec2 ec = vec2(-0.04, 0.06);
-        float d = length(p - ec);
-        o.ink = max(o.ink, smoothstep(wDot, wDot * 0.55, d));
-    }
-
-    // 7) Subtle LIP curve below nose — short stroke
-    {
-        vec2 a = vec2(-0.16, -0.10);
-        vec2 b = vec2(-0.12, -0.13);
-        vec2 cc= vec2(-0.06, -0.12);
-        float d = sdBezier(p, a, b, cc);
-        o.ink = max(o.ink, smoothstep(wThin * 0.9, wThin * 0.35, d));
+        o.ink = max(o.ink, smoothstep(wThin, wThin * 0.4, d));
     }
 
     return o;
@@ -178,7 +173,7 @@ LineArt facePortrait(vec2 uv, float t) {
 // so Sobel finds those edges and the mood re-render kicks in.
 float field(vec2 uv, float t, bool useFallback) {
     if (useFallback) {
-        LineArt la = facePortrait(uv, t);
+        LineArt la = coastalScene(uv, t);
         // Dark ink on cream: 1.0 paper, 0.0 ink.
         // Red accent pushes a separate dark band so Sobel finds it too.
         float v = 1.0 - la.ink * 0.95 - la.red * 0.6;
@@ -257,7 +252,7 @@ void main() {
     // then OR with the Sobel response for crisp edge boost.
     LineArt la;
     la.ink = 0.0; la.red = 0.0;
-    if (useFallback) la = facePortrait(sampleUV, t);
+    if (useFallback) la = coastalScene(sampleUV, t);
 
     float sobelInk = smoothstep(0.05, 0.55, mag);
     sobelInk *= mix(0.7, 1.6, lw * 0.5);

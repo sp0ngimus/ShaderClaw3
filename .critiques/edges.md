@@ -17,3 +17,21 @@
 - Stretch, particle size defaults tuned up for visibility
 **HDR peaks reached:** particle cores + halo accumulation → 2.5+ per cluster
 **Estimated rating:** 4.0★
+
+## 2026-05-12
+**Prior rating:** 0.0★
+**Approach:** 2D refine — NEW ANGLE: Wide coastal panorama (prior 2026-05-05 was close-up Picasso face portrait; this is landscape orientation with lighthouse, cliff, seagulls, horizon — different composition axis and reference)
+**Critique:**
+1. Composition: wide panoramic landscape (horizon line + cliff + lighthouse + sky) vs prior portrait face; completely different framing.
+2. Reference: coastal scene → all 5 drawing moods (Charcoal/Pencil/Etching/Schiele/Hockney) now applied to landscape.
+3. Motion: subtle sway animation (0.004 * sin(t*0.42)) for wind effect.
+4. Silhouette: lighthouse tower strong vertical; cliff diagonal; horizon horizontal — 3 clear compositional elements.
+5. HDR fidelity: beacon lamp accent (HDR amber 2.5) replaces prior ear stud; same intensity level.
+**Changes:**
+- Replaced facePortrait() with coastalScene(): horizon line, cliff bezier, lighthouse SDF (vertical segments + arc), wave arcs, seagull M-arches, distant headland
+- RED accent → beacon lamp dot (amber, same smoothstep radii)
+- Maintained all 5 drawing moods, Sobel pipeline, HDR rim, hatch system
+- Sway 0.004 (vs face sway 0.010) — calmer
+**Motion audit:** sway 0.004 ✓ (calm); audio params unchanged from prior (K via audioReact param ≤ 2.0, user-controlled).
+**HDR peaks reached:** ink rim vec3(2.3+) per mood; beacon lamp 2.5; paper 1.0 baseline
+**Estimated rating:** 4.0★
