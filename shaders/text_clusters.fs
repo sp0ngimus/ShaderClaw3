@@ -11,10 +11,10 @@
     { "NAME": "bridgeK", "LABEL": "Bridge Smoothness", "TYPE": "float", "DEFAULT": 0.045, "MIN": 0.0, "MAX": 0.12 },
     { "NAME": "interBridgeK", "LABEL": "Inter-Cluster Bridge", "TYPE": "float", "DEFAULT": 0.18, "MIN": 0.0, "MAX": 0.35 },
     { "NAME": "morphAmp", "LABEL": "Bridge Morph", "TYPE": "float", "DEFAULT": 0.45, "MIN": 0.0, "MAX": 1.5 },
-    { "NAME": "nodeRadius", "LABEL": "Node Radius", "TYPE": "float", "DEFAULT": 0.06, "MIN": 0.025, "MAX": 0.13 },
+    { "NAME": "nodeRadius", "LABEL": "Node Radius", "TYPE": "float", "DEFAULT": 0.095, "MIN": 0.025, "MAX": 0.18 },
     { "NAME": "radiusVariance", "LABEL": "Radius Variance", "TYPE": "float", "DEFAULT": 0.55, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "orbitSpeed", "LABEL": "Orbit Speed", "TYPE": "float", "DEFAULT": 0.15, "MIN": 0.0, "MAX": 1.5 },
-    { "NAME": "textScale", "LABEL": "Text Size", "TYPE": "float", "DEFAULT": 0.026, "MIN": 0.012, "MAX": 0.08 },
+    { "NAME": "textScale", "LABEL": "Text Size", "TYPE": "float", "DEFAULT": 0.020, "MIN": 0.010, "MAX": 0.06 },
     { "NAME": "kerning", "LABEL": "Kerning", "TYPE": "float", "DEFAULT": 0.85, "MIN": 0.55, "MAX": 1.4 },
     { "NAME": "audioReact", "LABEL": "Audio React", "TYPE": "float", "DEFAULT": 0.7, "MIN": 0.0, "MAX": 2.0 },
     { "NAME": "autoTextColor", "LABEL": "Auto Text Color", "TYPE": "bool", "DEFAULT": 1.0 },
@@ -35,6 +35,8 @@
 
 #define MAX_CLUSTERS 16
 #define MAX_NODES    5
+#define MAX_WALK     64
+#define SPACE_CH     26
 
 // ─── Font atlas ─────────────────────────────────────────────────────
 float sampleChar(int ch, vec2 uv) {
@@ -162,15 +164,12 @@ void main() {
     float charW     = charH * (5.0 / 7.0);
     float kern      = charW * kerning;
 
-    // Each node renders a SHORT-SENTENCE-SIZED slice of the message,
-    // not a 2-char fragment. Default ~8 chars per node so a single
-    // word or short phrase fits per circle. Auto-shrink in the cell
-    // sizing block below scales the slice down if a long word would
-    // overflow the node radius.
-    int chunkLen = total / max(clusters, 1);
-    if (chunkLen < 8)         chunkLen = 8;
-    if (chunkLen > total)     chunkLen = total;
-    if (chunkLen > 16)        chunkLen = 16;
+    // Each node now hosts a multi-line word-wrapped paragraph chunk
+    // (set in the rendering block below from the bubble's char budget).
+    // chunkLen kept here only as a coarse upper bound used for chunk
+    // assignment across nodes.
+    int chunkLen = total;
+    if (chunkLen > 48) chunkLen = 48;
 
     // Each cluster's life cycles every `lifetime` seconds. Phase staggered
     // by clusterIdx/clusters so spawns never bunch up.
@@ -294,53 +293,108 @@ void main() {
         float fill = 1.0 - smoothstep(-fw, fw, clusterSdf);
         if (fill < 0.001) continue;
 
-        // ─── Text inside the nearest node ────────────────────────
-        // Each node renders chunkLen characters across its diameter.
-        // Cell-local coords centered on the node. Tight cap on
-        // text height (40% of node radius) keeps glyphs INSIDE the
-        // circle with breathing room — was 95% which let glyphs
-        // bleed onto the silhouette and read poorly.
+        // ─── Multi-line word-wrapped text inside the nearest node ───
+        // Inscribed axis-aligned text box, top-left anchored. Word-wrap:
+        // a word that won't fit on the current line wraps as a unit
+        // (never mid-word); single words longer than charsPerRow hard-
+        // wrap. Speech-bubble layout — each node holds a small paragraph.
         vec2 localP = p - nearestPos;
-        float effCharH = min(charH, nearestRad * 0.40);
+
+        // Inscribed box: 62% of node radius keeps a margin so text
+        // doesn't kiss the bubble silhouette.
+        float boxHalf = nearestRad * 0.62;
+
+        float effCharH = min(charH, nearestRad * 0.22);
         float effCharW = effCharH * (5.0 / 7.0);
         float effKern  = effCharW * kerning;
-        // Skip rendering text if the chunk wouldn't fit in this
-        // circle — keeps cluster silhouettes clean rather than
-        // showing fragments of letters cut by the SDF edge.
-        float chunkRowW = float(chunkLen) * effKern;
-        float maxRowW   = nearestRad * 1.55;
-        if (chunkRowW > maxRowW) {
-            // Auto-shrink to fit instead of skipping.
-            float scale = maxRowW / chunkRowW;
-            effCharH *= scale;
-            effCharW *= scale;
-            effKern  *= scale;
+        float lineH    = effCharH * 1.30;
+
+        int charsPerRow = int(floor((boxHalf * 2.0) / effKern));
+        int maxRows     = int(floor((boxHalf * 2.0) / lineH));
+        if (charsPerRow < 1) charsPerRow = 1;
+        if (maxRows     < 1) maxRows     = 1;
+
+        // Pixel position inside the text box. Top-left origin so rows
+        // read top→bottom and columns read left→right (left-aligned).
+        float lx = localP.x + boxHalf;
+        float ly = boxHalf - localP.y;
+        if (lx < 0.0 || lx > boxHalf * 2.0) continue;
+        if (ly < 0.0 || ly > boxHalf * 2.0) continue;
+
+        int targetCol = int(floor(lx / effKern));
+        int targetRow = int(floor(ly / lineH));
+        if (targetCol >= charsPerRow) continue;
+        if (targetRow >= maxRows)     continue;
+
+        // Row band gap — only the upper effCharH of the lineH strip
+        // carries the glyph; the remainder is inter-line whitespace.
+        float yInRow = ly - float(targetRow) * lineH;
+        if (yInRow > effCharH) continue;
+
+        // Each node owns a paragraph-sized chunk of the wrapped
+        // message stream, sized to roughly fill the bubble's grid.
+        int budget = charsPerRow * maxRows;
+        int chunkStart = (c * nodesEach + nearestNode) * budget;
+
+        // Word-wrap walk. Maintain (cursorR, cursorC); a word that
+        // won't fit wraps as a unit. outCh is filled when the walk
+        // reaches the target cell.
+        int cursorR = 0;
+        int cursorC = 0;
+        int outCh = -1;
+
+        for (int i = 0; i < MAX_WALK; i++) {
+            if (i >= budget) break;
+            if (cursorR > targetRow) break;
+
+            int rawIdx    = chunkStart + i;
+            int globalIdx = rawIdx - (rawIdx / total) * total;
+            int ch        = getChar(globalIdx);
+
+            if (ch == SPACE_CH) {
+                // Look-ahead: length of the upcoming word.
+                int wlen = 0;
+                for (int j = 1; j < MAX_WALK; j++) {
+                    int jj = i + j;
+                    if (jj >= budget) break;
+                    int gj  = chunkStart + jj;
+                    int gjm = gj - (gj / total) * total;
+                    int chj = getChar(gjm);
+                    if (chj == SPACE_CH || chj < 0 || chj > 36) break;
+                    wlen++;
+                }
+                if (cursorC > 0 && cursorC + 1 + wlen > charsPerRow) {
+                    // Wrap before the word: drop the space, advance row.
+                    cursorR++;
+                    cursorC = 0;
+                } else if (cursorC > 0) {
+                    if (cursorR == targetRow && cursorC == targetCol) {
+                        outCh = SPACE_CH;
+                    }
+                    cursorC++;
+                }
+                // Leading-space-on-new-row is silently consumed.
+            } else if (ch >= 0 && ch <= 36) {
+                if (cursorR == targetRow && cursorC == targetCol) {
+                    outCh = ch;
+                }
+                cursorC++;
+                if (cursorC >= charsPerRow) {
+                    // Hard wrap — single word exceeded row width.
+                    cursorR++;
+                    cursorC = 0;
+                }
+            }
         }
 
-        // Offset within the node's diameter.
-        float lx = localP.x + float(chunkLen) * effKern * 0.5;
-        float ly = localP.y + effCharH * 0.5;
-        if (lx < 0.0 || ly < 0.0 || ly > effCharH) continue;
+        // Space cells render nothing (atlas idx 26 is blank); skip.
+        if (outCh < 0 || outCh > 35 || outCh == SPACE_CH) continue;
 
-        int colIdx = int(floor(lx / effKern));
-        if (colIdx < 0 || colIdx >= chunkLen) continue;
-
-        // Global character index, wrapped mod `total` so every node
-        // shows a piece of the message (otherwise nodes whose offset
-        // exceeds total would be empty).
-        int rawIdx    = (c * nodesEach + nearestNode) * chunkLen + colIdx;
-        int globalIdx = rawIdx - (rawIdx / total) * total;
-        if (globalIdx < 0 || globalIdx >= total) continue;
-
-        int ch = getChar(globalIdx);
-        if (ch < 0 || ch > 36) continue;
-
-        vec2 cellLocal = vec2((lx - float(colIdx) * effKern) / effCharW,
-                              ly / effCharH);
-        float s = sampleChar(ch, cellLocal);
+        vec2 cellLocal = vec2((lx - float(targetCol) * effKern) / effCharW,
+                              yInRow / effCharH);
+        float s = sampleChar(outCh, cellLocal);
         s = smoothstep(0.18, 0.55, s);
         if (s > 0.001) {
-            // Auto contrast based on the cluster cell tint.
             vec3 inkColor;
             if (autoTextColor) {
                 float lum = dot(cTint, vec3(0.299, 0.587, 0.114));
