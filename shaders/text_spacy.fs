@@ -1,6 +1,6 @@
 /*{
   "CATEGORIES": ["Generator", "Text"],
-  "DESCRIPTION": "Spacy - perspective tunnel rows",
+  "DESCRIPTION": "Spacy — perspective tunnel rows with underwater caustics background. Animated light-refraction caustic patterns on deep aquamarine. Bright cyan text in HDR. LINEAR HDR out.",
   "INPUTS": [
     { "NAME": "msg", "TYPE": "text", "DEFAULT": " ETHEREA", "MAX_LENGTH": 48 },
     { "NAME": "preset", "LABEL": "Style", "TYPE": "long", "VALUES": [0,1,2,3], "LABELS": ["Spacy","Spacy Bridge","Spacy Whitney","Spacy Recede"], "DEFAULT": 0 },
@@ -12,9 +12,10 @@
     { "NAME": "oscSpeed", "LABEL": "Osc Speed", "TYPE": "float", "MIN": 0.0, "MAX": 10.0, "DEFAULT": 0.0 },
     { "NAME": "oscAmount", "LABEL": "Osc Amount", "TYPE": "float", "MIN": 0.0, "MAX": 0.2, "DEFAULT": 0.0 },
     { "NAME": "oscSpread", "LABEL": "Osc Spread", "TYPE": "float", "MIN": 0.0, "MAX": 2.0, "DEFAULT": 0.5 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
-    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [0.25, 1.0, 0.88, 1.0] },
+    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.06, 0.12, 1.0] },
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false },
+    { "NAME": "hdrGlow", "LABEL": "HDR Glow", "TYPE": "float", "MIN": 1.0, "MAX": 4.0, "DEFAULT": 2.0 }
   ]
 }*/
 
@@ -92,12 +93,45 @@ float sampleChar(int ch, vec2 uv) {
 }
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+float h21sp(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float vnsp(vec2 p){
+    vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+    return mix(mix(h21sp(i),h21sp(i+vec2(1,0)),f.x),mix(h21sp(i+vec2(0,1)),h21sp(i+vec2(1,1)),f.x),f.y);
+}
+float fbmSP(vec2 p){float v=0.0,a=0.5;for(int i=0;i<4;i++){v+=a*vnsp(p);p=p*2.0+vec2(3.7,1.9);a*=0.5;}return v;}
+
+// Underwater caustics — animated light refraction on aquamarine floor
+vec3 causticsBg(vec2 uv) {
+    float t = TIME * 0.25;
+    vec2 p = uv * 6.0;
+
+    // Three layers of caustic interference (offset in space and time)
+    float c1 = fbmSP(p + vec2(t * 0.4,  t * 0.3));
+    float c2 = fbmSP(p + vec2(-t*0.35, t*0.28) + vec2(3.1, 1.7));
+    float c3 = fbmSP(p + vec2(t * 0.22, -t*0.41) + vec2(1.4, 4.2));
+
+    // Caustic bright spots where layers overlap
+    float caustic = pow(max(0.0, c1 * c2 * c3) * 8.0, 0.6);
+
+    // Deep water base gradient (darker at bottom)
+    vec3 deepWater = mix(vec3(0.0, 0.04, 0.10), vec3(0.0, 0.12, 0.22), uv.y);
+
+    // Caustic light in aqua/cyan — HDR peaks
+    vec3 causticCol = vec3(0.05, 0.60, 0.85) * caustic * 1.6
+                    + vec3(0.0,  0.90, 0.70) * caustic * caustic * 1.4;
+
+    // Subtle volumetric godrays (vertical sine bands)
+    float ray = 0.5 + 0.5*sin(uv.x * 18.0 + t * 0.6) * (0.4 + 0.3*sin(uv.x*7.1 - t*0.3));
+    vec3 rayCol = vec3(0.0, 0.20, 0.30) * ray * smoothstep(0.85, 0.95, ray) * 0.4;
+
+    return deepWater + causticCol + rayCol;
+}
 
 // =======================================================================
 // EFFECT: SPACY - perspective tunnel rows
 // =======================================================================
 
-vec4 effectSpacy(vec2 uv, int sub) {
+vec4 effectSpacy(vec2 uv, int sub, vec3 bgOverride) {
     float aspect = RENDERSIZE.x / RENDERSIZE.y;
     int numChars = charCount();
     float rws = floor(mix(3.0, 20.0, density));
@@ -146,18 +180,20 @@ vec4 effectSpacy(vec2 uv, int sub) {
     }
 
     bool inv = mod(ri, 2.0) < 1.0;
-    vec3 fg = inv ? bgColor.rgb : textColor.rgb;
-    vec3 bg = inv ? textColor.rgb : bgColor.rgb;
+    vec3 tCol = textColor.rgb * hdrGlow;
+    vec3 fg = inv ? bgOverride : tCol;
+    vec3 bg = inv ? tCol : bgOverride;
     vec3 fc = mix(bg, fg, textHit);
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) { a = textHit; fc = tCol; }
     return vec4(fc, a);
 }
 
 void main() {
     vec2 uv = gl_FragCoord.xy / RENDERSIZE.xy;
     int p = int(preset);
-    vec4 col = effectSpacy(uv, p);
+    vec3 animBg = transparentBg ? bgColor.rgb : causticsBg(uv);
+    vec4 col = effectSpacy(uv, p, animBg);
 
     if (_voiceGlitch > 0.01) {
         float g = _voiceGlitch;
@@ -170,9 +206,9 @@ void main() {
         vec2 uvR = uv + vec2(shift + chromaAmt, 0.0);
         vec2 uvB = uv + vec2(shift - chromaAmt, 0.0);
         vec2 uvG = uv + vec2(shift, chromaAmt * 0.5);
-        vec4 cR = effectSpacy(uvR, p);
-        vec4 cG = effectSpacy(uvG, p);
-        vec4 cB = effectSpacy(uvB, p);
+        vec4 cR = effectSpacy(uvR, p, causticsBg(uvR));
+        vec4 cG = effectSpacy(uvG, p, causticsBg(uvG));
+        vec4 cB = effectSpacy(uvB, p, causticsBg(uvB));
         vec4 glitched = vec4(cR.r, cG.g, cB.b, max(max(cR.a, cG.a), cB.a));
         float scanline = 0.95 + 0.05 * sin(uv.y * RENDERSIZE.y * 1.5 + t * 40.0);
         float blockX = floor(uv.x * 6.0);
