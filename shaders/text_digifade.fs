@@ -1,6 +1,6 @@
 /*{
   "CATEGORIES": ["Generator", "Text"],
-  "DESCRIPTION": "Digifade - glitch dissolve",
+  "DESCRIPTION": "Digifade — glitch dissolve with psychedelic plasma background. Rainbow sinusoidal plasma field pulses in full saturation. White text at HDR 2.5+ cuts through. LINEAR HDR out.",
   "INPUTS": [
     { "NAME": "msg", "TYPE": "text", "DEFAULT": " ETHEREA", "MAX_LENGTH": 48 },
     { "NAME": "preset", "LABEL": "Style", "TYPE": "long", "VALUES": [0,1], "LABELS": ["Digifade","Digifade Glitch"], "DEFAULT": 0 },
@@ -11,7 +11,8 @@
     { "NAME": "textScale", "LABEL": "Size", "TYPE": "float", "MIN": 0.3, "MAX": 2.0, "DEFAULT": 1.0 },
     { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
     { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false },
+    { "NAME": "hdrGlow", "LABEL": "HDR Glow", "TYPE": "float", "MIN": 1.0, "MAX": 4.0, "DEFAULT": 2.5 }
   ]
 }*/
 
@@ -90,11 +91,30 @@ float sampleChar(int ch, vec2 uv) {
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
+vec3 hsv2rgbDF(vec3 c) {
+    vec4 K = vec4(1.0,2.0/3.0,1.0/3.0,3.0);
+    vec3 p = abs(fract(c.xxx+K.xyz)*6.0-K.www);
+    return c.z*mix(K.xxx, clamp(p-K.xxx,0.0,1.0), c.y);
+}
+
+// Psychedelic plasma background — sinusoidal rainbow field
+vec3 plasmaBg(vec2 uv) {
+    float t = TIME * 0.35;
+    vec2 p = uv * 4.0;
+    float v = sin(p.x + t)
+            + sin(p.y + t * 0.93)
+            + sin((p.x + p.y) * 0.7 + t * 1.1)
+            + sin(length(p - vec2(2.0, 2.0)) * 1.5 - t * 0.8);
+    float hue = fract(v * 0.18 + t * 0.05);
+    // Fully saturated, value at 0.7 so it reads dark enough for text contrast
+    return hsv2rgbDF(vec3(hue, 1.0, 0.65));
+}
+
 // =======================================================================
 // EFFECT: DIGIFADE - glitch dissolve
 // =======================================================================
 
-vec4 effectDigifade(vec2 uv, int sub) {
+vec4 effectDigifade(vec2 uv, int sub, vec3 bgOverride) {
     float aspect = RENDERSIZE.x / RENDERSIZE.y;
     int numChars = charCount();
     float glitchAmount = intensity;
@@ -153,9 +173,10 @@ vec4 effectDigifade(vec2 uv, int sub) {
         }
     }
 
-    vec3 fc = mix(bgColor.rgb, textColor.rgb, textHit);
+    vec3 tCol = textColor.rgb * hdrGlow;
+    vec3 fc = mix(bgOverride, tCol, textHit);
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) { a = textHit; fc = tCol; }
     return vec4(fc, a);
 }
 
@@ -166,7 +187,8 @@ vec4 effectDigifade(vec2 uv, int sub) {
 void main() {
     vec2 uv = gl_FragCoord.xy / RENDERSIZE.xy;
     int p = int(preset);
-    vec4 col = effectDigifade(uv, p);
+    vec3 animBg = transparentBg ? bgColor.rgb : plasmaBg(uv);
+    vec4 col = effectDigifade(uv, p, animBg);
 
     if (_voiceGlitch > 0.01) {
         float g = _voiceGlitch;
@@ -179,9 +201,9 @@ void main() {
         vec2 uvR = uv + vec2(shift + chromaAmt, 0.0);
         vec2 uvB = uv + vec2(shift - chromaAmt, 0.0);
         vec2 uvG = uv + vec2(shift, chromaAmt * 0.5);
-        vec4 cR = effectDigifade(uvR, p);
-        vec4 cG = effectDigifade(uvG, p);
-        vec4 cB = effectDigifade(uvB, p);
+        vec4 cR = effectDigifade(uvR, p, plasmaBg(uvR));
+        vec4 cG = effectDigifade(uvG, p, plasmaBg(uvG));
+        vec4 cB = effectDigifade(uvB, p, plasmaBg(uvB));
         vec4 glitched = vec4(cR.r, cG.g, cB.b, max(max(cR.a, cG.a), cB.a));
         float scanline = 0.95 + 0.05 * sin(uv.y * RENDERSIZE.y * 1.5 + t * 40.0);
         float blockX = floor(uv.x * 6.0);
