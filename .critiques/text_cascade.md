@@ -18,3 +18,21 @@
 - audioMod input added
 **HDR peaks reached:** gold text * 2.2 = 2.2 direct; with audio 3.0+
 **Estimated rating:** 3.8★
+
+## 2026-05-12
+**Prior rating:** 0.0★
+**Approach:** 2D refine — NEW ANGLE: Sunset canyon bg (prior was aurora bg)
+**Critique:**
+1. Reference fidelity: Cascade row effect composited against sunset canyon panorama — warm temperature counterpoint to prior cool aurora entry.
+2. Compositional craft: Sky gradient crimson→amber→gold, HDR sun disc + halo, desert ridge silhouette — strong landscape composition; golden text reads as sunlit type.
+3. Technical execution: Sun disc via smoothstep dot distance; halo as power falloff; FBM desert ridge as horizon silhouette; bgOverride pattern keeps transparent mode.
+4. Liveness: Sky bands and ridge shift subtly with TIME; sun halo pulses.
+5. Differentiation: Warm sunset vs cold aurora; landscape reference vs abstract aurora; HDR gold text vs prior white/gold.
+**Changes:**
+- Added sunsetBg(): sky gradient + HDR sun disc (2.2) + halo + FBM desert ridge silhouette
+- effectCascade() accepts bgOverride param — uses sunsetBg() when transparentBg=false
+- transparentBg default: true→false
+- textColor default: white→gold [1.0,0.82,0.08] with hdrGlow=2.4 boost
+- hdrGlow parameter added (default 2.4)
+**HDR peaks reached:** sun disc 2.2; text * 2.4 = 2.4 gold; halo ~1.4
+**Estimated rating:** 3.8★

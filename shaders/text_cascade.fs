@@ -1,6 +1,6 @@
 /*{
   "CATEGORIES": ["Generator", "Text"],
-  "DESCRIPTION": "Cascade - tiled rows with wave offsets",
+  "DESCRIPTION": "Cascade — tiled rows with wave offsets. Sunset canyon background: warm radial gradient from deep crimson to amber to gold sky. Text in deep gold, HDR-boosted. LINEAR HDR out.",
   "INPUTS": [
     { "NAME": "msg", "TYPE": "text", "DEFAULT": " ETHEREA", "MAX_LENGTH": 48 },
     { "NAME": "fontFamily", "LABEL": "Font", "TYPE": "long", "VALUES": [0,1,2,3], "LABELS": ["Inter","Times New Roman","Libre Caslon","Outfit"], "DEFAULT": 0 },
@@ -11,9 +11,10 @@
     { "NAME": "oscSpeed", "LABEL": "Osc Speed", "TYPE": "float", "MIN": 0.0, "MAX": 10.0, "DEFAULT": 0.0 },
     { "NAME": "oscAmount", "LABEL": "Osc Amount", "TYPE": "float", "MIN": 0.0, "MAX": 0.2, "DEFAULT": 0.0 },
     { "NAME": "oscSpread", "LABEL": "Osc Spread", "TYPE": "float", "MIN": 0.0, "MAX": 2.0, "DEFAULT": 0.5 },
-    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 1.0, 1.0, 1.0] },
-    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.0, 0.0, 0.0, 1.0] },
-    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": true }
+    { "NAME": "textColor", "LABEL": "Color", "TYPE": "color", "DEFAULT": [1.0, 0.82, 0.08, 1.0] },
+    { "NAME": "bgColor", "LABEL": "Background", "TYPE": "color", "DEFAULT": [0.06, 0.02, 0.0, 1.0] },
+    { "NAME": "transparentBg", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": false },
+    { "NAME": "hdrGlow", "LABEL": "HDR Glow", "TYPE": "float", "MIN": 1.0, "MAX": 4.0, "DEFAULT": 2.4 }
   ]
 }*/
 
@@ -91,12 +92,38 @@ float sampleChar(int ch, vec2 uv) {
 }
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+float h21sc(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float vnsc(vec2 p) {
+    vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+    return mix(mix(h21sc(i),h21sc(i+vec2(1,0)),f.x),mix(h21sc(i+vec2(0,1)),h21sc(i+vec2(1,1)),f.x),f.y);
+}
+float fbmSC(vec2 p){float v=0.0,a=0.5;for(int i=0;i<4;i++){v+=a*vnsc(p);p=p*2.1+vec2(5.3,2.7);a*=0.5;}return v;}
+
+// Sunset canyon background: deep crimson base, amber mid, gold sky
+vec3 sunsetBg(vec2 uv) {
+    float t = uv.y;
+    vec3 bottomCol = vec3(0.22, 0.04, 0.02);
+    vec3 midCol    = vec3(0.90, 0.28, 0.02);
+    vec3 topCol    = vec3(1.10, 0.72, 0.12);  // HDR gold sky
+    vec3 sky = mix(mix(bottomCol, midCol, smoothstep(0.0, 0.5, t)),
+                   topCol, smoothstep(0.45, 1.0, t));
+    // HDR sun disc
+    vec2 sc = vec2(0.5 + 0.06*sin(TIME*0.08), 0.72);
+    float sd = length(uv - sc) * 2.0;
+    vec3 sunCol  = vec3(2.2, 1.4, 0.4) * exp(-sd*sd*6.0);
+    vec3 haloCol = vec3(1.1, 0.45, 0.05) * exp(-sd*sd*0.9) * 0.35;
+    // Desert ridge silhouette
+    float ridgeH = 0.28 + 0.06*sin(uv.x*6.28*1.3+0.4) + 0.03*fbmSC(vec2(uv.x*4.0,0.5));
+    float inSky  = smoothstep(ridgeH+0.008, ridgeH-0.008, uv.y);
+    vec3 ridgeCol = vec3(0.06, 0.03, 0.02) * (1.0 - uv.y*0.3);
+    return mix(sky + sunCol + haloCol, ridgeCol, inSky);
+}
 
 // =======================================================================
 // EFFECT: CASCADE - tiled rows with wave offsets
 // =======================================================================
 
-vec4 effectCascade(vec2 uv) {
+vec4 effectCascade(vec2 uv, vec3 bgOverride) {
     float aspect = RENDERSIZE.x / RENDERSIZE.y;
     int numChars = charCount();
     float waveAmount = intensity;
@@ -132,11 +159,12 @@ vec4 effectCascade(vec2 uv) {
     }
 
     bool inv = mod(rowIdx, 2.0) < 1.0;
-    vec3 fg = inv ? bgColor.rgb : textColor.rgb;
-    vec3 bg = inv ? textColor.rgb : bgColor.rgb;
+    vec3 tCol = textColor.rgb * hdrGlow;
+    vec3 fg = inv ? bgOverride : tCol;
+    vec3 bg = inv ? tCol : bgOverride;
     vec3 fc = mix(bg, fg, textHit);
     float a = 1.0;
-    if (transparentBg) { a = textHit; fc = textColor.rgb; }
+    if (transparentBg) { a = textHit; fc = tCol; }
     return vec4(fc, a);
 }
 
@@ -146,7 +174,8 @@ vec4 effectCascade(vec2 uv) {
 
 void main() {
     vec2 uv = gl_FragCoord.xy / RENDERSIZE.xy;
-    vec4 col = effectCascade(uv);
+    vec3 animBg = transparentBg ? bgColor.rgb : sunsetBg(uv);
+    vec4 col = effectCascade(uv, animBg);
 
     if (_voiceGlitch > 0.01) {
         float g = _voiceGlitch;
@@ -159,9 +188,9 @@ void main() {
         vec2 uvR = uv + vec2(shift + chromaAmt, 0.0);
         vec2 uvB = uv + vec2(shift - chromaAmt, 0.0);
         vec2 uvG = uv + vec2(shift, chromaAmt * 0.5);
-        vec4 cR = effectCascade(uvR);
-        vec4 cG = effectCascade(uvG);
-        vec4 cB = effectCascade(uvB);
+        vec4 cR = effectCascade(uvR, sunsetBg(uvR));
+        vec4 cG = effectCascade(uvG, sunsetBg(uvG));
+        vec4 cB = effectCascade(uvB, sunsetBg(uvB));
         vec4 glitched = vec4(cR.r, cG.g, cB.b, max(max(cR.a, cG.a), cB.a));
         float scanline = 0.95 + 0.05 * sin(uv.y * RENDERSIZE.y * 1.5 + t * 40.0);
         float blockX = floor(uv.x * 6.0);
