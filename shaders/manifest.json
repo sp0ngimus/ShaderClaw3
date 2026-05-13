@@ -1881,5 +1881,18 @@
     "file": "wave_text.fs",
     "hasVertex": false,
     "hidden": false
+  },
+  {
+    "id": 568,
+    "title": "Geo",
+    "description": "Geo — 2D path-traced circle-circle intersection. Two orbiting circles compute their algebraic intersection points in real time; a 68-sample radial path tracer accumulates global illumination across the canvas. Ported from Yusef28 Shadertoy 7l2XDm.",
+    "type": "generator",
+    "categories": [
+      "Generator",
+      "Audio Reactive"
+    ],
+    "file": "geo.fs",
+    "hasVertex": false,
+    "hidden": false
   }
 ]
