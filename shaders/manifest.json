@@ -1894,5 +1894,19 @@
     "file": "geo.fs",
     "hasVertex": false,
     "hidden": false
+  },
+  {
+    "id": 569,
+    "title": "Underwater",
+    "description": "Underwater — looking up from the deep. Volumetric god rays pierce down through dancing caustics, rising bubbles trail upward toward the rippling surface. HDR linear output for bloom-catching highlights.",
+    "type": "generator",
+    "categories": [
+      "Generator",
+      "3D",
+      "Audio Reactive"
+    ],
+    "file": "underwater.fs",
+    "hasVertex": false,
+    "hidden": false
   }
 ]
