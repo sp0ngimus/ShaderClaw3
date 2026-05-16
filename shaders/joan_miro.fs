@@ -92,11 +92,10 @@ void main() {
     float split = groundSplit + wave;
     vec3  col   = mix(botCol, topCol, smoothstep(split - 0.012, split + 0.012, uv.y));
 
-    // ── Biomorphic blobs ─────────────────────────────────────────────────────
+    // ── Biomorphic blobs — painter's algorithm (back to front) ───────────────
+    // Each blob is composited independently onto col so there are no
+    // Voronoi-boundary artifacts when parameters change.
     int N = int(clamp(blobCount, 1.0, 18.0));
-
-    float bestBSD = 1e9;
-    float bestBFI = 0.0;
 
     for (int i = 0; i < 18; i++) {
         if (i >= N) break;
@@ -119,24 +118,20 @@ void main() {
         float phase = h11(fi * 7.31) * 6.2832 + T * 0.4 * (h11(fi * 11.0) - 0.5);
         float sd    = sdBlob(P - ctr, r, phase);
 
-        if (sd < bestBSD) {
-            bestBSD = sd;
-            bestBFI = fi;
-        }
+        // Color from stable integer index — no float mod precision issues
+        int bci = int(mod(float(i) + S * 0.37, 6.0));
+        vec3 blobCol;
+        if      (bci == 0) blobCol = mRed;
+        else if (bci == 1) blobCol = mYel;
+        else if (bci == 2) blobCol = mBlu;
+        else if (bci == 3) blobCol = mWht;
+        else if (bci == 4) blobCol = mBrn;
+        else               blobCol = mGry;
+
+        // Flat fill + thick black outline, composited per-blob
+        col = mix(col, mBlk,    smoothstep(0.006, 0.0,    sd + 0.009));
+        col = mix(col, blobCol, smoothstep(0.004, -0.004, sd));
     }
-
-    // Flat fill + thick black outline (no in-shape gradients, true to Miró)
-    int bci = int(mod(bestBFI * 1.73 + S * 0.37, 6.0));
-    vec3 blobCol;
-    if      (bci == 0) blobCol = mRed;
-    else if (bci == 1) blobCol = mYel;
-    else if (bci == 2) blobCol = mBlu;
-    else if (bci == 3) blobCol = mWht;
-    else if (bci == 4) blobCol = mBrn;
-    else               blobCol = mGry;
-
-    col = mix(col, mBlk,    smoothstep(0.006, 0.0,    bestBSD + 0.009));
-    col = mix(col, blobCol, smoothstep(0.004, -0.004, bestBSD));
 
     // ── Eyes ─────────────────────────────────────────────────────────────────
     int NE = int(clamp(eyeCount, 0.0, 8.0));
