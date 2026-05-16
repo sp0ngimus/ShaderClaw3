@@ -44,7 +44,7 @@ float sdStar5(vec2 p, float r) {
     p = length(p) * vec2(cos(bn), abs(sin(bn)));
     p -= r * acs;
     p += ecs * clamp(-dot(p, ecs), 0.0, r * acs.y / ecs.y);
-    return length(p) * sign(p.x);
+    return length(p) * sign(p.x + 1e-5);
 }
 
 // Crescent: outer circle minus offset inner circle
@@ -220,9 +220,9 @@ void main() {
         float targetY = baseY
             + amp1 * sin(frq1 * x * 6.2832 + ph1)
             + amp2 * sin(frq2 * x * 6.2832 + ph2);
-        float slope = amp1 * frq1 * 6.2832 * cos(frq1 * x * 6.2832 + ph1)
-                    + amp2 * frq2 * 6.2832 * cos(frq2 * x * 6.2832 + ph2);
-        float dist = abs(uv.y - targetY) / sqrt(1.0 + slope * slope);
+        // No slope correction — dividing by sqrt(1+slope²) makes steep
+        // sections sub-pixel thin, which causes strobing as the line animates.
+        float dist = abs(uv.y - targetY);
 
         float lw = (0.007 + h11(fk * 71.33) * 0.006)
                  * (1.0 + audioMid * audioReact * 0.35);
