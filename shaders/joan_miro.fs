@@ -10,7 +10,8 @@
     { "NAME": "driftSpeed",  "LABEL": "Drift Speed",    "TYPE": "float", "MIN": 0.0,  "MAX": 1.0,  "DEFAULT": 0.18 },
     { "NAME": "groundSplit", "LABEL": "Horizon",        "TYPE": "float", "MIN": 0.3,  "MAX": 0.7,  "DEFAULT": 0.48 },
     { "NAME": "audioReact",  "LABEL": "Audio React",    "TYPE": "float", "MIN": 0.0,  "MAX": 2.0,  "DEFAULT": 1.0  },
-    { "NAME": "seed",        "LABEL": "Seed",           "TYPE": "float", "MIN": 0.0,  "MAX": 50.0, "DEFAULT": 0.0  }
+    { "NAME": "seed",        "LABEL": "Seed",           "TYPE": "float", "MIN": 0.0,  "MAX": 50.0, "DEFAULT": 0.0  },
+    { "NAME": "transparentBg", "LABEL": "Transparent BG", "TYPE": "bool", "DEFAULT": false }
   ]
 }*/
 
