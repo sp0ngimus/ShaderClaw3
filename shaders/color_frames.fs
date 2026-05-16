@@ -10,6 +10,10 @@
     { "NAME": "outlineAmt",   "LABEL": "Outline",        "TYPE": "float", "DEFAULT": 0.90, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "shadowAmt",    "LABEL": "Drop Shadow",    "TYPE": "float", "DEFAULT": 0.50, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "grain",        "LABEL": "Paper Grain",    "TYPE": "float", "DEFAULT": 0.25, "MIN": 0.0, "MAX": 1.0 },
+    { "NAME": "fieldAmount",  "LABEL": "Surreal Field",  "TYPE": "float", "DEFAULT": 1.00, "MIN": 0.0, "MAX": 1.5 },
+    { "NAME": "speckDensity", "LABEL": "Speck Swarm",    "TYPE": "float", "DEFAULT": 0.65, "MIN": 0.0, "MAX": 1.0 },
+    { "NAME": "inkBlobs",     "LABEL": "Ink Blobs",      "TYPE": "float", "DEFAULT": 0.70, "MIN": 0.0, "MAX": 1.0 },
+    { "NAME": "showPanels",   "LABEL": "Bento Panels",   "TYPE": "float", "DEFAULT": 1.00, "MIN": 0.0, "MAX": 1.0 },
     { "NAME": "audioReact",   "LABEL": "Audio React",    "TYPE": "float", "DEFAULT": 0.60, "MIN": 0.0, "MAX": 2.0 },
     { "NAME": "bgColor",      "LABEL": "Paper Color",    "TYPE": "color", "DEFAULT": [0.905, 0.902, 0.892, 1.0] },
     { "NAME": "accentColor",  "LABEL": "Accent Orange",  "TYPE": "color", "DEFAULT": [0.97,  0.42,  0.13,  1.0] }
@@ -79,6 +83,134 @@ vec3 PAL(float t) {
     if (i == 3) return mix(S3, S4, f);
     if (i == 4) return mix(S4, S5, f);
     return mix(S5, S0, f);
+}
+
+float hash21(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
+vec2  hash22(vec2 p) {
+    return fract(sin(vec2(dot(p, vec2(127.1, 311.7)),
+                          dot(p, vec2(269.5, 183.3)))) * 43758.5453);
+}
+float segDist(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// ── Surreal scattered field ────────────────────────────────────────
+// Painted onto the warm paper *behind* the bento panels: a glowing
+// sun, drifting colour halos, gradient puddles, glossy black ink
+// blobs, a twinkling speck swarm, wavy squiggles, lollipop antennas
+// and little cones. fp.x runs 0..aspect, fp.y runs 0..1 (y up).
+void applyField(inout vec3 col, vec2 p, float aspect, float t, float au) {
+    float FA = fieldAmount;
+    if (FA <= 0.001) return;
+
+    // Sun — soft hot core with a warm bloom.
+    {
+        vec2 c = vec2(aspect * 0.46, 0.80) + 0.012 * vec2(sin(t * 0.3), cos(t * 0.2));
+        float d = length(p - c);
+        vec3 sun = mix(vec3(0.99, 0.86, 0.26), vec3(0.98, 0.52, 0.55),
+                       smoothstep(0.0, 0.20, d));
+        col += sun * smoothstep(0.20, 0.0, d) * (0.55 + 0.30 * au) * FA;
+        col += vec3(0.99, 0.90, 0.55) * exp(-d * 7.0) * 0.40 * FA;
+    }
+
+    // Drifting colour halos.
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        vec2 c = vec2(hash21(vec2(fi, 1.0)) * aspect, hash21(vec2(fi, 2.0)));
+        c += 0.018 * vec2(sin(t * 0.4 + fi), cos(t * 0.5 + fi));
+        float d = length(p - c);
+        float r = mix(0.06, 0.17, hash21(vec2(fi, 3.0)));
+        col += PAL(hash21(vec2(fi, 4.0))) * exp(-d * d / (r * r)) * 0.32 * FA;
+    }
+
+    // Gradient puddles — big soft flat lakes (blue pool, green land).
+    for (int i = 0; i < 2; i++) {
+        vec2  c   = (i == 0) ? vec2(aspect * 0.52, 0.15) : vec2(aspect * 0.74, 0.56);
+        vec2  rad = (i == 0) ? vec2(0.32, 0.10)          : vec2(0.21, 0.085);
+        float d   = length((p - c) / rad);
+        float m   = smoothstep(1.0, 0.55, d) * 0.80 * FA;
+        vec3  pc  = (i == 0)
+            ? mix(vec3(0.25, 0.55, 0.95), vec3(0.55, 0.35, 0.92), fbm(p * 5.0 + t * 0.1))
+            : mix(vec3(0.24, 0.74, 0.30), vec3(0.85, 0.85, 0.22), fbm(p * 6.0 - t * 0.1));
+        pc += (vnoise(p * 120.0) - 0.5) * 0.15;
+        col = mix(col, pc, m);
+    }
+
+    // Glossy black ink blobs — warped, anisotropic, specular dab.
+    for (int i = 0; i < 8; i++) {
+        float fi = float(i);
+        vec2  c  = vec2(hash21(vec2(fi, 11.0)) * aspect, hash21(vec2(fi, 12.0)));
+        float ang = hash21(vec2(fi, 13.0)) * 6.2831;
+        float ca = cos(ang), sa = sin(ang);
+        mat2  rot = mat2(ca, -sa, sa, ca);
+        vec2  q  = rot * (p - c);
+        vec2  scl = vec2(1.0, mix(0.5, 2.4, hash21(vec2(fi, 14.0))));
+        float rb = mix(0.018, 0.055, hash21(vec2(fi, 15.0)));
+        float warp = 0.20 * fbm(q * 9.0 + fi);
+        float d = length(q / scl) - rb * (1.0 + warp);
+        float fill = smoothstep(0.004, -0.004, d) * inkBlobs * FA;
+        vec3 ink = vec3(0.04, 0.045, 0.06);
+        vec2 hp = c + mat2(ca, sa, -sa, ca) * vec2(-rb * 0.35, rb * 0.5 * scl.y);
+        ink += vec3(0.92) * smoothstep(rb * 0.5, 0.0, length(p - hp)) * 0.6;
+        col = mix(col, ink, fill);
+    }
+
+    // Twinkling speck swarm — two jittered grid layers.
+    float SD = speckDensity * FA;
+    for (int L = 0; L < 2; L++) {
+        float cell = (L == 0) ? 0.045 : 0.085;
+        vec2 g = p / cell, id = floor(g), f = fract(g) - 0.5;
+        vec2 rnd = hash22(id + float(L) * 7.0);
+        float on = step(0.42, hash21(id + float(L) * 3.7 + 0.5));
+        float d  = length(f - (rnd - 0.5) * 0.6) * cell;
+        float sz = mix(0.0025, 0.0085, hash21(id + 1.7));
+        float tw = clamp(0.55 + 0.45 * sin(t * 3.5 + hash21(id) * 40.0) * au, 0.0, 1.0);
+        float m  = smoothstep(sz, sz * 0.35, d) * on * SD * tw;
+        vec3 spc = (hash21(id + 9.1) < 0.22) ? vec3(0.05, 0.05, 0.07)
+                                             : PAL(hash21(id + 0.3));
+        col = mix(col, spc, m);
+    }
+
+    // Wavy squiggle filaments.
+    for (int k = 0; k < 3; k++) {
+        float fk = float(k);
+        float cy = 0.22 + 0.27 * fk + 0.02 * sin(t * 0.3 + fk);
+        float yl = cy + 0.035 * sin(p.x * (7.0 + fk * 3.0) + t * 0.8 + fk * 2.0)
+                      + 0.018 * fbm(p * 4.0 + fk * 5.0);
+        float win = smoothstep(0.0, 0.12, p.x) * smoothstep(aspect, aspect - 0.12, p.x);
+        float m = smoothstep(0.004, 0.0015, abs(p.y - yl)) * win * 0.9 * FA;
+        col = mix(col, PAL(0.08 + 0.27 * fk + t * 0.02), m);
+    }
+
+    // Lollipop antennas — thin stalk, bright cap.
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float x  = mix(0.06, aspect - 0.06, hash21(vec2(fi, 21.0)));
+        float y0 = 0.10 + 0.5 * hash21(vec2(fi, 22.0));
+        float y1 = y0 + mix(0.10, 0.26, hash21(vec2(fi, 23.0)));
+        float ds = segDist(p, vec2(x, y0), vec2(x, y1));
+        col = mix(col, vec3(0.10, 0.10, 0.12),
+                  smoothstep(0.0018, 0.0006, ds) * FA);
+        col = mix(col, PAL(hash21(vec2(fi, 24.0))),
+                  smoothstep(0.012, 0.006, length(p - vec2(x, y1))) * FA);
+    }
+
+    // Little cones near the ground.
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        vec2 b = vec2(mix(0.10, aspect - 0.10, hash21(vec2(fi, 31.0))),
+                      0.10 + 0.15 * hash21(vec2(fi, 32.0)));
+        float w = mix(0.03, 0.06, hash21(vec2(fi, 33.0)));
+        float h = mix(0.06, 0.13, hash21(vec2(fi, 34.0)));
+        vec2  d = p - b;
+        float tt = clamp(d.y / h, 0.0, 1.0);
+        float inside = smoothstep(0.003, 0.0, abs(d.x) - w * (1.0 - tt))
+                       * step(0.0, d.y) * step(d.y, h);
+        col = mix(col, mix(PAL(hash21(vec2(fi, 35.0))), vec3(0.98, 0.9, 0.4), tt),
+                  inside * 0.9 * FA);
+    }
 }
 
 // Per-panel layout. luv-space x runs 0..0.80, y runs 0..1 (y down).
@@ -171,6 +303,11 @@ void main() {
     float g = vnoise(gl_FragCoord.xy * 1.7) - 0.5;
     col += g * grain * 0.05;
 
+    // ── Surreal scattered field (behind the panels) ──
+    float aspect = R.x / R.y;
+    vec2 fp = gl_FragCoord.xy / R.y;          // x: 0..aspect, y: 0..1
+    applyField(col, fp, aspect, t, clamp(audioLevel * audio, 0.0, 1.0));
+
     // ── Soft drop shadows (one pass, behind every panel) ──
     vec2 shOff = vec2(0.007, 0.012);
     float shadow = 0.0;
@@ -180,7 +317,7 @@ void main() {
         float sd = sdRB((v - shOff) - c, b, r);
         shadow = max(shadow, smoothstep(0.028, 0.0, sd));
     }
-    col = mix(col, col * 0.72, shadow * shadowAmt);
+    col = mix(col, col * 0.72, shadow * shadowAmt * showPanels);
 
     // ── Panels (front-most wins; the layout barely overlaps) ──
     float aa = max(fwidth(v.x + v.y), 1e-4) * 1.4;
@@ -189,7 +326,7 @@ void main() {
         panelData(i, c, b, r, style, seed);
         vec2 lp = v - c;
         float sd = sdRB(lp, b, r);
-        float cov = smoothstep(aa, -aa, sd);
+        float cov = smoothstep(aa, -aa, sd) * showPanels;
         if (cov <= 0.0) continue;
 
         vec2 luv = (lp + b) / (2.0 * b);   // 0..1 within panel, y down
